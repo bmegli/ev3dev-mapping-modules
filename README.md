@@ -1,2 +1,2 @@
 # ev3dev-mapping-modules
-Robot side modules feeding data to ev3dev-mapping-ui
+A bunch of small programs feeding data to [ev3dev-mapping-ui](https://github.com/bmegli/ev3dev-mapping-ui)
