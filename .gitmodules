@@ -1,0 +1,3 @@
+[submodule "lib/xv11lidar"]
+	path = lib/xv11lidar
+	url = https://github.com/bmegli/xv11lidar
