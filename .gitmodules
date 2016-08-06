@@ -1,3 +1,6 @@
 [submodule "lib/xv11lidar"]
 	path = lib/xv11lidar
 	url = https://github.com/bmegli/xv11lidar
+[submodule "lib/ev3dev-lang-cpp"]
+	path = lib/ev3dev-lang-cpp
+	url = https://github.com/bmegli/ev3dev-lang-cpp
