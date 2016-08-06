@@ -29,7 +29,7 @@
 
 #include "xv11lidar/xv11lidar.h"
 
-#include "ev3dev/ev3dev.h"
+#include "ev3dev-lang-cpp/ev3dev.h"
 
 #include <stdio.h>
 #include <signal.h> //sigaction

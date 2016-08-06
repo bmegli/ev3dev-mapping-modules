@@ -29,7 +29,7 @@
 #include "shared/misc.h"
 #include "shared/net_udp.h"
 
-#include "ev3dev/ev3dev.h"
+#include "ev3dev-lang-cpp/ev3dev.h"
 
 #include <signal.h> //sigaction, sig_atomic_t
 #include <endian.h> //htobe16, htobe32, htobe64

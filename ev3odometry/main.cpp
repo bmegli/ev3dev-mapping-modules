@@ -36,7 +36,7 @@ char GYRO_PATH[GYRO_PATH_MAX]="/sys/class/lego-sensor/sensor";
 #include "shared/misc.h"
 #include "shared/net_udp.h"
 
-#include "ev3dev/ev3dev.h"
+#include "ev3dev-lang-cpp/ev3dev.h"
 
 #include <stdio.h>
 #include <string.h> //memcpy
