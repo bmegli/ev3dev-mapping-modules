@@ -27,8 +27,8 @@ misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
-xv11lidar.o: $(XV11LIDAR)/xv11lidar.h $(XV11LIDAR)/xv11lidar.cpp
-	$(CC) $(CFLAGS) $(XV11LIDAR)/xv11lidar.cpp
+xv11lidar.o: $(XV11LIDAR)/xv11lidar.h $(XV11LIDAR)/xv11lidar.c
+	$(CC) $(CFLAGS) $(XV11LIDAR)/xv11lidar.c
 
 clean:
 	\rm *.o $(TARGET)
