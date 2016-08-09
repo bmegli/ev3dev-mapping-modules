@@ -43,11 +43,14 @@ To do - rewrite makefile not to build ev3dev-lang-cpp 3 times!
 
 ## Next steps
 
-To do!
+To do! Totally preliminary!
 
 Assuming the same hardware like me you would cd to bin directory, call sudo ev3init, and call ev3control.
 
 ev3control would take care of the rest enabling/disabling modules on request from ev3dev-mapping-ui.
 
 Note that ev3control is insecure at this stage so you should only use it in trusted networks (e.g. private)
+
+If you had different hardware, for example only lidar hooked up to EV3 you would edit ev3init, comment out everything but lidar motor and port.
+Then you would run ev3control. On ev3dev-mapping-ui side you would create robot object, drag Laser component, set the UDP IP address, set mapping mode to local, and correct ports.
 
