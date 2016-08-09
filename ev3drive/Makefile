@@ -1,4 +1,4 @@
-OBJS = ev3drive.o ev3dev.o net_udp.o misc.o
+OBJS = main.o ev3dev.o net_udp.o misc.o
 EV3DEV = ../lib/ev3dev-lang-cpp
 SHARED = ../lib/shared
 INCLUDE = ../lib
@@ -13,7 +13,7 @@ LFLAGS = -Wall $(DEBUG)
 ev3drive : $(OBJS)
 	$(CXX) $(LFLAGS) $(OBJS) -o ev3drive
 
-ev3drive.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h 
+main.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
 
 ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp 
@@ -22,7 +22,7 @@ ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp
 misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
 	
-net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp
+net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
 clean:
