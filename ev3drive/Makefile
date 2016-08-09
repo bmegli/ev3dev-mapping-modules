@@ -1,12 +1,13 @@
 OBJS = ev3drive.o ev3dev.o net_udp.o misc.o
 EV3DEV = ../lib/ev3dev-lang-cpp
 SHARED = ../lib/shared
+INCLUDE = ../lib
 
 CC = gcc
 CXX = g++
 DEBUG = 
 CFLAGS = -O2 -Wall -DEV3 -c 
-CXX_FLAGS = -O2 -std=c++11 -Wall -DEV3 -D_GLIBCXX_USE_NANOSLEEP -c $(DEBUG)
+CXX_FLAGS = -O2 -std=c++11 -Wall -DEV3 -D_GLIBCXX_USE_NANOSLEEP -c $(DEBUG) -I $(INCLUDE)
 LFLAGS = -Wall $(DEBUG)
 
 ev3drive : $(OBJS)
