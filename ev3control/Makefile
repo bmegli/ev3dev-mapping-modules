@@ -27,4 +27,4 @@ net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
 clean:
-	\rm *.o $(TARGET)
+	\rm -f *.o $(TARGET)

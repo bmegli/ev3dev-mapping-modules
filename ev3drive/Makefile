@@ -29,4 +29,4 @@ net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
 	
 	
 clean:
-	\rm *.o $(TARGET)
+	\rm -f *.o $(TARGET)

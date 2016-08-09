@@ -31,4 +31,4 @@ xv11lidar.o: $(XV11LIDAR)/xv11lidar.h $(XV11LIDAR)/xv11lidar.c
 	$(CC) $(CFLAGS) $(XV11LIDAR)/xv11lidar.c
 
 clean:
-	\rm *.o $(TARGET)
+	\rm -f *.o $(TARGET)
