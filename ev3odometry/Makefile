@@ -1,4 +1,4 @@
-TARGET = ev3drive
+TARGET = ev3odometry
 OBJS = main.o ev3dev.o net_udp.o misc.o
 EV3DEV = ../lib/ev3dev-lang-cpp
 SHARED = ../lib/shared
@@ -26,7 +26,5 @@ misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
-	
-	
 clean:
 	\rm *.o $(TARGET)
