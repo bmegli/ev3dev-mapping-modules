@@ -1,6 +1,6 @@
-TARGET = ev3odometry
-OBJS = main.o ev3dev.o net_udp.o misc.o
-EV3DEV = ../lib/ev3dev-lang-cpp
+TARGET = ev3control
+OBJS = main.o net_udp.o misc.o modules.o
+
 SHARED = ../lib/shared
 INCLUDE = ../lib
 
@@ -14,12 +14,12 @@ LFLAGS = -Wall $(DEBUG)
 $(TARGET) : $(OBJS)
 	$(CXX) $(LFLAGS) $(OBJS) -o $(TARGET)
 
-main.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h 
+main.o : main.cpp $(SHARED)/misc.h $(SHARED)/net_udp.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
 
-ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp 
-	$(CXX) $(CXX_FLAGS) $(EV3DEV)/ev3dev.cpp
-
+modules.o: modules.h modules.cpp $(SHARED)/misc.h
+	$(CXX) $(CXX_FLAGS) modules.cpp
+	
 misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
 	

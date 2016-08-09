@@ -15,7 +15,7 @@ LFLAGS = -Wall $(DEBUG)
 $(TARGET) : $(OBJS)
 	$(CXX) $(LFLAGS) $(OBJS) -o $(TARGET)
 
-main.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h  $(XV11LIDAR)/xv11lidar.h $(XV11LIDAR)/xv11lidar.c
+main.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h  $(XV11LIDAR)/xv11lidar.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
 
 ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp 
@@ -24,7 +24,7 @@ ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp
 misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
 	
-net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h $(SHARED)/misc.cpp
+net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
 xv11lidar.o: $(XV11LIDAR)/xv11lidar.h $(XV11LIDAR)/xv11lidar.cpp

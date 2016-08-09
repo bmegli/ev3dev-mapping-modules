@@ -23,7 +23,7 @@ ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp
 misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
 	
-net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h $(SHARED)/misc.cpp
+net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
 	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
 
 	
