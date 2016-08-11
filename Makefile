@@ -1,4 +1,5 @@
-DIRS = ev3drive ev3odometry ev3laser ev3control OUTPUT_DIR = bin
+DIRS = ev3drive ev3odometry ev3laser ev3control
+OUTPUT_DIR = bin
 
 all: $(DIRS) ev3init
 
