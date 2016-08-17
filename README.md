@@ -1,7 +1,10 @@
 # ev3dev-mapping-modules
 A bunch of small programs feeding data to [ev3dev-mapping-ui](https://github.com/bmegli/ev3dev-mapping-ui)
 
-To do - link to ev3dev project page with high level description 
+For high-level project overview visit [ev3dev-mapping web page](http://www.ev3dev.org/projects/2016/08/07/Mapping/)
+
+For project meta-repository visit [ev3dev-mapping](https://github.com/bmegli/ev3dev-mapping)
+
 To do - add information on hardware requirements
 
 ## Building Instructions
