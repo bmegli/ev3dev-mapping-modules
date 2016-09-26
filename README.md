@@ -45,27 +45,6 @@ To do - rewrite makefile not to build ev3dev-lang-cpp 3 times!
 
 ## Next steps
 
-### Testing the LIDAR
-
-Plug LIDAR data conector to port 1, motor connector to port C.
-
-Initialize ports and run `ev3control`
-
-``` bash
-cd bin
-./TestingTheLIDAR.sh # changes input 1 mode to other-uart, output C to dc-motor
-./ev3control 8004 500 # starts ev3control listening on port 8004 with 500 ms timeout
-```
-
-- Open [ev3dev-mapping-ui](https://github.com/bmegli/ev3dev-mapping-ui) in Unity
-- Open TestingTheLIDAR scene
-- Select Robot game object
-- Configure ip addresses of robot and host
-- Hit 'Play' button in Unity
-- Hit 'Play' again when you are done
-
-If all went well the LIDAR should start spinning and readings should be updated in real-time.
-
 ### Mapping 
 
 To do! Totally preliminary!
