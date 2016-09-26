@@ -15,7 +15,6 @@ The instructions here are for compiling on EV3.
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get upgrade
 $ sudo apt-get install build-essential
 ```
 
