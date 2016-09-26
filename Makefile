@@ -7,8 +7,9 @@ $(DIRS):
 	$(MAKE) -C $@ && cp $@/$@ $(OUTPUT_DIR)/$@
 
 ev3init:
-	cp ev3init.sh $(OUTPUT_DIR)/ev3init.sh && chmod +x $(OUTPUT_DIR)/ev3init.sh
-
+	cp scripts/ev3init.sh $(OUTPUT_DIR)/ev3init.sh && chmod +x $(OUTPUT_DIR)/ev3init.sh
+	cp scripts/TestingTheLIDAR.sh $(OUTPUT_DIR)/TestingTheLIDAR.sh && chmod +x $(OUTPUT_DIR)/TestingTheLIDAR.sh
+	
 clean: 
 	$(MAKE) -C ev3drive clean
 	$(MAKE) -C ev3odometry clean
