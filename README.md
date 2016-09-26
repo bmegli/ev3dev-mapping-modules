@@ -15,7 +15,6 @@ The instructions here are for compiling on EV3.
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get upgrade
 $ sudo apt-get install build-essential
 ```
 
@@ -46,6 +45,29 @@ To do - rewrite makefile not to build ev3dev-lang-cpp 3 times!
 
 ## Next steps
 
+### Testing the LIDAR
+
+Plug LIDAR data conector to port 1, motor connector to port C.
+
+Initialize ports and run `ev3control`
+
+``` bash
+cd bin
+./TestingTheLIDAR.sh # changes input 1 mode to other-uart, output C to dc-motor
+./ev3control 8004 500 # starts ev3control listening on port 8004 with 500 ms timeout
+```
+
+- Open [ev3dev-mapping-ui](https://github.com/bmegli/ev3dev-mapping-ui) in Unity
+- Open TestingTheLIDAR scene
+- Select Robot game object
+- Configure ip addresses of robot and host
+- Hit 'Play' button in Unity
+- Hit 'Play' again when you are done
+
+If all went well the LIDAR should start spinning and readings should be updated in real-time.
+
+### Mapping 
+
 To do! Totally preliminary!
 
 Assuming the same hardware like me you would cd to bin directory, call sudo ev3init, and call ev3control.
@@ -53,7 +75,3 @@ Assuming the same hardware like me you would cd to bin directory, call sudo ev3i
 ev3control would take care of the rest enabling/disabling modules on request from ev3dev-mapping-ui.
 
 Note that ev3control is insecure at this stage so you should only use it in trusted networks (e.g. private)
-
-If you had different hardware, for example only lidar hooked up to EV3 you would edit ev3init, comment out everything but lidar motor and port.
-Then you would run ev3control. On ev3dev-mapping-ui side you would create robot object, drag Laser component, set the UDP IP address, set mapping mode to local, and correct ports.
-
