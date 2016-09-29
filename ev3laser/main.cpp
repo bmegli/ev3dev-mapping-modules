@@ -31,6 +31,7 @@
 
 #include "ev3dev-lang-cpp/ev3dev.h"
 
+#include <limits.h> //INT_MAX
 #include <stdio.h>
 #include <signal.h> //sigaction
 #include <string.h> //memset
@@ -54,7 +55,7 @@ const int LASER_PACKET_BYTES = 12 + 16 * LASER_FRAMES_PER_READ;
 
 void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lidar_data *laser, ev3dev::dc_motor *laser_motor);
 
-int ProcessInput(int argc, char **argv, short *port, int *duty_cycle);
+int ProcessInput(int argc, char **argv, int *port, int *duty_cycle);
 void Usage();
 void RegisterSignals();
 void Finish(int signal);
@@ -72,7 +73,7 @@ int main(int argc, char **argv)
 	int socket_udp;
     struct sockaddr_in address_udp;
 	struct xv11lidar_data laser;    
-	short port;
+	int port;
 	int  duty_cycle;
 	
 	if( ProcessInput(argc, argv, &port, &duty_cycle) )
@@ -92,7 +93,7 @@ int main(int argc, char **argv)
 	InitNetworkUDP(&socket_udp, &address_udp, host, port, 0);
 	InitLaserMotor(&motor, duty_cycle);
 	//let the motor spin for a while
-	Sleep(3000); 
+	Sleep(1000); 
 	 
  	if( InitLaser(&laser, laser_tty, LASER_FRAMES_PER_READ) !=SUCCESS )
 	{
@@ -120,7 +121,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 	int status, counter;
 	
 
-	int benchs=1000000;
+	int benchs=INT_MAX;
 	uint64_t start=TimestampUs();
 	
 	last_timestamp=TimestampUs();
@@ -161,7 +162,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 }
 
 
-int ProcessInput(int argc, char **argv, short *out_port, int *duty_cycle)
+int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle)
 {
 	long int port, duty;
 				

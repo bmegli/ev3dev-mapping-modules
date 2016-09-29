@@ -38,6 +38,7 @@ char GYRO_PATH[GYRO_PATH_MAX]="/sys/class/lego-sensor/sensor";
 
 #include "ev3dev-lang-cpp/ev3dev.h"
 
+#include <limits.h> //INT_MAX
 #include <stdio.h>
 #include <string.h> //memcpy
 #include <unistd.h> //open, close, read, write
@@ -67,13 +68,13 @@ int EncodeOdometryPacket(const odometry_packet &packet, char *buffer);
 void SendOdometryFrameUDP(int socket, const sockaddr_in &dest, const odometry_packet &frame);
 
 void Usage();
-int ProcessInput(int argc, char **argv, short *out_port);
+int ProcessInput(int argc, char **argv, int *out_port);
 
 int main(int argc, char **argv)
 {
 	int socket_udp, gyro_direct_fd;
 	sockaddr_in destination_udp;
-	short port;
+	int port;
 	
 	if( ProcessInput(argc, argv, &port) )
 	{
@@ -105,7 +106,7 @@ int main(int argc, char **argv)
 
 void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &motor_left,const ev3dev::large_motor &motor_right, int gyro_direct_fd)
 {
-	const int BENCHS=1000000;
+	const int BENCHS=INT_MAX;
 		
 	struct odometry_packet frame;
 	int16_t heading, angular_speed;
@@ -230,7 +231,7 @@ void Usage()
 	printf("./ev3odometry 192.168.0.103 8000\n");
 }
 
-int ProcessInput(int argc, char **argv, short *out_port)
+int ProcessInput(int argc, char **argv, int *out_port)
 {
 	long int port;
 		
