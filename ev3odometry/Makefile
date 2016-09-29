@@ -1,7 +1,8 @@
 TARGET = ev3odometry
-OBJS = main.o ev3dev.o net_udp.o misc.o
 EV3DEV = ../lib/ev3dev-lang-cpp
 SHARED = ../lib/shared
+OBJS = main.o $(EV3DEV)/ev3dev.o $(SHARED)/net_udp.o $(SHARED)/misc.o
+
 INCLUDE = ../lib
 
 CC = gcc
@@ -17,14 +18,16 @@ $(TARGET) : $(OBJS)
 main.o : main.cpp $(EV3DEV)/ev3dev.h $(SHARED)/misc.h $(SHARED)/net_udp.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
 
-ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp 
-	$(CXX) $(CXX_FLAGS) $(EV3DEV)/ev3dev.cpp
+$(EV3DEV)/ev3dev.o : $(EV3DEV)/ev3dev.h $(EV3DEV)/ev3dev.cpp 
+	$(MAKE) -C $(EV3DEV)
 
-misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
-	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
+$(SHARED)/misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
+	$(MAKE) -C $(SHARED)
 	
-net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
-	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
+$(SHARED)/net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
+	$(MAKE) -C $(SHARED)
 
 clean:
 	\rm -f *.o $(TARGET)
+	$(MAKE) -C $(EV3DEV) clean
+	$(MAKE) -C $(SHARED) clean

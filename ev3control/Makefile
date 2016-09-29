@@ -1,7 +1,7 @@
 TARGET = ev3control
-OBJS = main.o net_udp.o misc.o modules.o
-
 SHARED = ../lib/shared
+OBJS = main.o modules.o $(SHARED)/net_udp.o $(SHARED)/misc.o
+
 INCLUDE = ../lib
 
 CC = gcc
@@ -20,11 +20,12 @@ main.o : main.cpp $(SHARED)/misc.h $(SHARED)/net_udp.h
 modules.o: modules.h modules.cpp $(SHARED)/misc.h
 	$(CXX) $(CXX_FLAGS) modules.cpp
 	
-misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
-	$(CXX) $(CXX_FLAGS) $(SHARED)/misc.cpp
+$(SHARED)/misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
+	$(MAKE) -C $(SHARED)
 	
-net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
-	$(CXX) $(CXX_FLAGS) $(SHARED)/net_udp.cpp
+$(SHARED)/net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
+	$(MAKE) -C $(SHARED)
 
 clean:
 	\rm -f *.o $(TARGET)
+	$(MAKE) -C $(SHARED) clean

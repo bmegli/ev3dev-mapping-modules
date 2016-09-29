@@ -16,7 +16,7 @@ clean:
 	$(MAKE) -C ev3odometry clean
 	$(MAKE) -C ev3laser clean
 	$(MAKE) -C ev3control clean
-	$(MAKE) -C ev3motors clean	
-	rm -rf bin/*
-	
+	$(MAKE) -C ev3motors clean
+	rm -f $(addprefix $(OUTPUT_DIR)/, $(DIRS) ev3init.sh TestingTheLIDAR.sh)	
+		
 .PHONY: clean $(DIRS)
