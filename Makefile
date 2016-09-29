@@ -16,6 +16,7 @@ clean:
 	$(MAKE) -C ev3odometry clean
 	$(MAKE) -C ev3laser clean
 	$(MAKE) -C ev3control clean
+	$(MAKE) -C ev3motors clean	
 	rm -rf bin/*
 	
 .PHONY: clean $(DIRS)
