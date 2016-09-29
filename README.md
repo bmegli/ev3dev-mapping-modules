@@ -39,11 +39,13 @@ cd ev3dev-mapping-modules
 make all
 ```
 
-Arm in patience. The results will be in `bin` directory.
-
-To do - rewrite makefile not to build ev3dev-lang-cpp 3 times!
+Arm in patience (20 minutes). The results will be in `bin` directory.
 
 ## Next steps
+
+### Getting Started - LIDAR
+
+Follow [Using the XV11 LIDAR](http://www.ev3dev.org/docs/tutorials/using-xv11-lidar/)
 
 ### Mapping 
 
