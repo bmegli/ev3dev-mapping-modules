@@ -7,7 +7,7 @@ CFLAGS = -O2 -Wall -DEV3 -c
 CXX_FLAGS = -O2 -std=c++11 -Wall -DEV3 -D_GLIBCXX_USE_NANOSLEEP -c $(DEBUG) -I $(INCLUDE)
 LFLAGS = -Wall $(DEBUG)
 
-all: misc.o net_udp.o
+all: $(OBJS)
 	
 misc.o: misc.h misc.cpp
 	$(CXX) $(CXX_FLAGS) misc.cpp
