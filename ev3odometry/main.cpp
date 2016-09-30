@@ -17,33 +17,24 @@
   * 
   * ev3odometry:
   * -reads 2 motors positions and speeds
-  * -reads gyroscope angle and speed
   * -timestamps the data
   * -sends the above data in UDP messages
+  * -waits defined time before next read
   *
   * Preconditions (for EV3/ev3dev):
   * -two tacho motors connected to ports A, D
-  * -MicroInfinity CruizCore XG1300L gyroscope connected to port 3 with manually loaded I2C driver
-  * . 
+  * 
   * See Usage() function for syntax details (or run the program without arguments)
   */
-
-// GYRO CONSTANTS
-const char *GYRO_PORT="i2c-legoev35:i2c1";
-const int GYRO_PATH_MAX=100;
-char GYRO_PATH[GYRO_PATH_MAX]="/sys/class/lego-sensor/sensor";
 
 #include "shared/misc.h"
 #include "shared/net_udp.h"
 
 #include "ev3dev-lang-cpp/ev3dev.h"
 
-#include <limits.h> //INT_MAX
 #include <stdio.h>
-#include <string.h> //memcpy
-#include <unistd.h> //open, close, read, write
-#include <fcntl.h> //O_RDONLY flag
 #include <endian.h> //htobe16, htobe32, htobe64
+#include <limits.h> //INT_MAX
 
 struct odometry_packet
 {
@@ -52,31 +43,30 @@ struct odometry_packet
 	int32_t position_right;
 	int32_t speed_left;
 	int32_t speed_right;
-	int16_t heading;
-	int16_t angular_speed;
+	int16_t reserved1;
+	int16_t reserved2;
 };
 
 const int ODOMETRY_PACKET_BYTES=28; //2*2 + 4*4 + 8
 
-void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &left,const ev3dev::large_motor &right, int gyro_direct_fd);
+void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &left,const ev3dev::large_motor &right, int poll_ms);
 
 void InitDriveMotor(ev3dev::large_motor *m);
-int InitGyro(ev3dev::i2c_sensor *gyro);
-int ReadGyroAngleAndSpeed(int gyro_direct_fd, int16_t *angle, int16_t *speed);
 
 int EncodeOdometryPacket(const odometry_packet &packet, char *buffer);
 void SendOdometryFrameUDP(int socket, const sockaddr_in &dest, const odometry_packet &frame);
 
 void Usage();
-int ProcessInput(int argc, char **argv, int *out_port);
+int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms);
 
 int main(int argc, char **argv)
 {
-	int socket_udp, gyro_direct_fd;
+	int socket_udp;
 	sockaddr_in destination_udp;
-	int port;
 	
-	if( ProcessInput(argc, argv, &port) )
+	int port, poll_ms;
+		
+	if( ProcessInput(argc, argv, &port, &poll_ms) )
 	{
 		Usage();
 		return 0;
@@ -85,35 +75,31 @@ int main(int argc, char **argv)
 	
 	ev3dev::large_motor motor_left(ev3dev::OUTPUT_A);
 	ev3dev::large_motor motor_right(ev3dev::OUTPUT_D);
-	ev3dev::i2c_sensor gyro(GYRO_PORT, {"mi-xg1300l"});
 
 	SetStandardInputNonBlocking();	
-
-	gyro_direct_fd=InitGyro(&gyro);
 
 	InitNetworkUDP(&socket_udp, &destination_udp, host, port, 0);
 	
 	InitDriveMotor(&motor_left);
 	InitDriveMotor(&motor_right);
 		
-	MainLoop(socket_udp, destination_udp, motor_left, motor_right, gyro_direct_fd);
+	MainLoop(socket_udp, destination_udp, motor_left, motor_right, poll_ms);
 	
-	close(gyro_direct_fd);
 	CloseNetworkUDP(socket_udp);
 
 	return 0;
 }
 
-void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &motor_left,const ev3dev::large_motor &motor_right, int gyro_direct_fd)
+void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &motor_left,const ev3dev::large_motor &motor_right, int poll_ms)
 {
 	const int BENCHS=INT_MAX;
 		
 	struct odometry_packet frame;
-	int16_t heading, angular_speed;
 	uint64_t start=TimestampUs();
-	int i, enxios=0;
+	int i;
 	
 	
+				
 	for(i=0;i<BENCHS;++i)
 	{	
 		frame.position_left=  motor_left.position();
@@ -121,22 +107,15 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::
 		frame.speed_left =  motor_left.speed();
 		frame.speed_right=  motor_right.speed();
 		frame.timestamp_us=TimestampUs();
-		if(ReadGyroAngleAndSpeed(gyro_direct_fd, &heading, &angular_speed) == -ENXIO)
-		{ //this is workaround for occasional ENXIO problem
-			fprintf(stderr, "Got ENXIO, retrying %d\n", ++enxios);
-			continue; //we need to collect data again, this failure could be time consuming
-		}
-		frame.heading=heading;
-		frame.angular_speed=angular_speed;		
 		SendOdometryFrameUDP(socket_udp, destination_udp, frame);
-		enxios=0; //part of workaround for occasoinal ENXIO
 
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;
+			
+		Sleep(poll_ms);
 	}
 		
 	uint64_t end=TimestampUs();
-	;
 	double seconds_elapsed=(end-start)/ 1000000.0L;
 	printf("%f\n", seconds_elapsed/i);
 }
@@ -146,51 +125,6 @@ void InitDriveMotor(ev3dev::large_motor *m)
 	if(!m->connected())
 		Die("Motor not connected");
 }
-int InitGyro(ev3dev::i2c_sensor *gyro)
-{
-	int fd;
-	
-	if(!gyro->connected())	
-		Die("Unable to find gyroscope");
-		
-	gyro->set_poll_ms(0);
-	gyro->set_command("RESET");
-	
-	printf("Callculating gyroscope bias drift\n");
-	Sleep(1000);
-	fflush(stdout);
-	
-	snprintf(GYRO_PATH+strlen(GYRO_PATH), GYRO_PATH_MAX, "%d/direct", gyro->device_index());
-	
-	if((fd=open(GYRO_PATH, O_RDONLY))==-1)	
-		DieErrno("open(GYRO_PATH, O_RDONLY)");
-
-	printf("Gyroscope ready\n");
-
-	return fd;
-}
-
-int ReadGyroAngleAndSpeed(int gyro_direct_fd, int16_t *out_angle, int16_t *out_speed)
-{
-	char temp[4];
-	int result;
-	
-	if(lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1)
-		DieErrno("lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1");
-		
-	if( (result=read(gyro_direct_fd, temp, 4 )) == 4)
-	{
-		memcpy(out_angle, temp, 2);
-		memcpy(out_speed, temp+2, 2);
-		return 0;
-	}	
-		
-	if( (result <= 0 && errno != ENXIO) )
-		DieErrno("Read Gyro failed");
-		
-	return -ENXIO;			
-}
-
 
 int EncodeOdometryPacket(const odometry_packet &p, char *data)
 {
@@ -209,12 +143,12 @@ int EncodeOdometryPacket(const odometry_packet &p, char *data)
 	*((uint32_t*)data)= htobe32(p.speed_right);
 	data += sizeof(p.speed_right);
 	
-	*((uint16_t*)data)= htobe16(p.heading);
-	data += sizeof(p.heading);
+	*((uint16_t*)data)= htobe16(0);
+	data += sizeof(p.reserved1);
 
-	*((uint16_t*)data)= htobe16(p.angular_speed);
-	data += sizeof(p.angular_speed);
-	
+	*((uint16_t*)data)= htobe16(0);
+	data += sizeof(p.reserved2);
+		
 	return ODOMETRY_PACKET_BYTES;	
 }
 void SendOdometryFrameUDP(int socket, const sockaddr_in &destination, const odometry_packet &frame)
@@ -226,16 +160,16 @@ void SendOdometryFrameUDP(int socket, const sockaddr_in &destination, const odom
 
 void Usage()
 {
-	printf("ev3odometry host port\n\n");
+	printf("ev3odemtry host port poll_ms\n\n");
 	printf("examples:\n");
-	printf("./ev3odometry 192.168.0.103 8000\n");
+	printf("./ev3odometry 192.168.0.103 8005 10\n");
 }
 
-int ProcessInput(int argc, char **argv, int *out_port)
+int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 {
-	long int port;
-		
-	if(argc!=3)
+	long int port, poll_ms;
+			
+	if(argc!=4)
 		return -1;
 		
 	port=strtol(argv[2], NULL, 0);
@@ -245,6 +179,14 @@ int ProcessInput(int argc, char **argv, int *out_port)
 		return -1;
 	}
 	*out_port=port;
+
+	poll_ms=strtol(argv[3], NULL, 0);
+	if(poll_ms <= 0 || poll_ms > 1000)
+	{
+		fprintf(stderr, "The argument poll_ms has to be in range <1, 1000>\n");
+		return -1;
+	}
+	*out_poll_ms=poll_ms;
 	
 	return 0;
 }

@@ -1,6 +1,6 @@
 TARGET = ev3odometry
-EV3DEV = ../lib/ev3dev-lang-cpp
 SHARED = ../lib/shared
+EV3DEV = ../lib/ev3dev-lang-cpp
 OBJS = main.o $(EV3DEV)/ev3dev.o $(SHARED)/net_udp.o $(SHARED)/misc.o
 
 INCLUDE = ../lib

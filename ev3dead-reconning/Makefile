@@ -1,6 +1,6 @@
-TARGET = ev3motors
-SHARED = ../lib/shared
+TARGET = ev3dead-reconning
 EV3DEV = ../lib/ev3dev-lang-cpp
+SHARED = ../lib/shared
 OBJS = main.o $(EV3DEV)/ev3dev.o $(SHARED)/net_udp.o $(SHARED)/misc.o
 
 INCLUDE = ../lib
