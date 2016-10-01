@@ -1,5 +1,5 @@
 /*
- * ev3lidar program
+ * ev3laser program
  *
  * Copyright (C) 2016 Bartosz Meglicki <meglickib@gmail.com>
  *
@@ -15,7 +15,7 @@
  /*   
   * This program was created for EV3 & XV11 lidar with ev3dev OS
   * 
-  * ev3lidar:
+  * ev3laser:
   * -starts lidar motor
   * -reads lidar data from tty
   * -timestamps the data
@@ -188,10 +188,10 @@ int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle)
 }
 void Usage()
 {
-	printf("ev3lidar tty motor_port host port duty_cycle\n\n");
+	printf("ev3laser tty motor_port host port duty_cycle\n\n");
 	printf("examples:\n");
-	printf("./ev3lidar /dev/tty_in1 outC 192.168.0.103 8001 -40\n");
-	printf("./ev3lidar /dev/tty_in2 outB 192.168.0.103 8002 40\n");
+	printf("./ev3laser /dev/tty_in1 outC 192.168.0.103 8001 -40\n");
+	printf("./ev3laser /dev/tty_in2 outB 192.168.0.103 8002 40\n");
 }
 
 void Finish(int signal)
