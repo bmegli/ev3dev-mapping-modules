@@ -109,7 +109,7 @@ int main(int argc, char **argv)
 
 	printf("bye\n");
 
-    return 0;	
+	return 0;	
 }
 
 void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lidar_data *laser, ev3dev::dc_motor *laser_motor)
