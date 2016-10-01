@@ -71,7 +71,7 @@ void SendLaserPacket(int socket_udp, const sockaddr_in &dst, const laser_packet 
 int main(int argc, char **argv)
 {
 	int socket_udp;
-    struct sockaddr_in address_udp;
+	struct sockaddr_in address_udp;
 	struct xv11lidar_data laser;    
 	int port;
 	int  duty_cycle;
@@ -104,7 +104,7 @@ int main(int argc, char **argv)
 	MainLoop(socket_udp, address_udp, &laser, &motor);
 
 	CloseLaser(&laser);
-    motor.stop();
+	motor.stop();
 	CloseNetworkUDP(socket_udp);
 
 	printf("bye\n");
@@ -118,13 +118,10 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 	struct laser_frame frames[LASER_FRAMES_PER_READ];
 	uint64_t last_timestamp;
 	uint32_t rpm;
-	int status, counter;
-	
+	int status, counter, benchs=INT_MAX;
 
-	int benchs=INT_MAX;
-	uint64_t start=TimestampUs();
-	
-	last_timestamp=TimestampUs();
+	uint64_t start=TimestampUs();	
+	last_timestamp=start;
 		
 	for(counter=0;!g_finish_program && counter<benchs;++counter)
 	{
