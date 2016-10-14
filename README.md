@@ -18,6 +18,14 @@ $ sudo apt-get update
 $ sudo apt-get install build-essential
 ```
 
+### Dependencies
+
+ev3wifi module depends on Minimalistic Netlink Library - [libmnl](https://www.netfilter.org/projects/libmnl/)
+
+``` bash
+$ sudo apt-get install libmnl0 libmnl-dev
+```
+
 ### Getting git
 
 ``` bash
