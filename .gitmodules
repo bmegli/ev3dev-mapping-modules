@@ -4,3 +4,6 @@
 [submodule "lib/ev3dev-lang-cpp"]
 	path = lib/ev3dev-lang-cpp
 	url = https://github.com/bmegli/ev3dev-lang-cpp
+[submodule "lib/wifi-scan"]
+	path = lib/wifi-scan
+	url = https://github.com/bmegli/wifi-scan.git
