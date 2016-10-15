@@ -132,10 +132,10 @@ int EncodeWifiPacket(const wifi_packet &p, char *data)
 	data += sizeof(p.timestamp_us);
 
 	memcpy(data, p.bssid, BSSID_LENGTH);
-	data += sizeof(BSSID_LENGTH);
+	data += BSSID_LENGTH;
 
 	memcpy(data, p.ssid, SSID_MAX_LENGTH_WITH_NULL);
-	data += sizeof(SSID_MAX_LENGTH_WITH_NULL);
+	data += SSID_MAX_LENGTH_WITH_NULL;
 
 	*data=p.signal_dbm;
 	data += 1;
