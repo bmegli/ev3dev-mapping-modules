@@ -97,7 +97,7 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, wifi_scan *wif
 	struct station_info station;	
 	struct wifi_packet packet;
 	uint64_t start=TimestampUs();
-	int i;
+	int i, elapsed_us, poll_us=1000*poll_ms;
 	
 	for(i=0;i<BENCHS;++i)
 	{	
@@ -113,11 +113,15 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, wifi_scan *wif
 			SendWifiPacketUDP(socket_udp, destination_udp, packet);
 		}
 		else
-			fprintf(stderr, "No associated station");
+			fprintf(stderr, "ev3wifi: no associated station\n");
 			
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;
-		Sleep(poll_ms);
+
+		elapsed_us=(int)(TimestampUs()-packet.timestamp_us);
+		
+		if( elapsed_us < poll_us )
+			SleepUs(poll_us - elapsed_us);
 	}
 		
 	uint64_t end=TimestampUs();

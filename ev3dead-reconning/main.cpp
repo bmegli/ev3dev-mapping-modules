@@ -16,8 +16,8 @@
   * This program was created for EV3 with ev3dev OS 
   * 
   * ev3dead-reconning:
-  * -reads 2 motors positions and speeds
-  * -reads gyroscope angle and speed
+  * -reads 2 motors positions
+  * -reads gyroscope angle
   * -timestamps the data
   * -sends the above data in UDP messages
   *
@@ -58,25 +58,25 @@ struct dead_reconning_packet
 
 const int DEAD_RECONNING_PACKET_BYTES=28; //2*2 + 4*4 + 8
 
-void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &left,const ev3dev::large_motor &right, int gyro_direct_fd);
+void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &left,const ev3dev::large_motor &right, int gyro_direct_fd, int poll_ms);
 
 void InitDriveMotor(ev3dev::large_motor *m);
 int InitGyro(ev3dev::i2c_sensor *gyro);
-int ReadGyroAngleAndSpeed(int gyro_direct_fd, int16_t *angle, int16_t *speed);
+int ReadGyroAngle(int gyro_direct_fd, int16_t *out_angle);
 
 int EncodeDeadReconningPacket(const dead_reconning_packet &packet, char *buffer);
 void SendDeadReconningFrameUDP(int socket, const sockaddr_in &dest, const dead_reconning_packet &frame);
 
 void Usage();
-int ProcessInput(int argc, char **argv, int *out_port);
+int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms);
 
 int main(int argc, char **argv)
 {
 	int socket_udp, gyro_direct_fd;
 	sockaddr_in destination_udp;
-	int port;
+	int port, poll_ms;
 	
-	if( ProcessInput(argc, argv, &port) )
+	if( ProcessInput(argc, argv, &port, &poll_ms) )
 	{
 		Usage();
 		return 0;
@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 	InitDriveMotor(&motor_left);
 	InitDriveMotor(&motor_right);
 		
-	MainLoop(socket_udp, destination_udp, motor_left, motor_right, gyro_direct_fd);
+	MainLoop(socket_udp, destination_udp, motor_left, motor_right, gyro_direct_fd, poll_ms);
 	
 	close(gyro_direct_fd);
 	CloseNetworkUDP(socket_udp);
@@ -104,39 +104,41 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &motor_left,const ev3dev::large_motor &motor_right, int gyro_direct_fd)
+void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &motor_left,const ev3dev::large_motor &motor_right, int gyro_direct_fd, int poll_ms)
 {
 	const int BENCHS=INT_MAX;
 		
 	struct dead_reconning_packet frame;
-	int16_t heading, angular_speed;
+	int16_t heading;
 	uint64_t start=TimestampUs();
-	int i, enxios=0;
-	
-	
+	int i, enxios=0, elapsed_us, poll_us=1000*poll_ms;
+		
 	for(i=0;i<BENCHS;++i)
 	{	
+		frame.timestamp_us=TimestampUs();
 		frame.position_left=  motor_left.position();
 		frame.position_right=  motor_right.position();
-		frame.speed_left =  motor_left.speed();
-		frame.speed_right=  motor_right.speed();
-		frame.timestamp_us=TimestampUs();
-		if(ReadGyroAngleAndSpeed(gyro_direct_fd, &heading, &angular_speed) == -ENXIO)
+		
+		if(ReadGyroAngle(gyro_direct_fd, &heading) == -ENXIO)
 		{ //this is workaround for occasional ENXIO problem
 			fprintf(stderr, "Got ENXIO, retrying %d\n", ++enxios);
 			continue; //we need to collect data again, this failure could be time consuming
 		}
 		frame.heading=heading;
-		frame.angular_speed=angular_speed;		
 		SendDeadReconningFrameUDP(socket_udp, destination_udp, frame);
 		enxios=0; //part of workaround for occasoinal ENXIO
 
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;
+
+		elapsed_us=(int)(TimestampUs()-frame.timestamp_us);
+		
+		if( elapsed_us < poll_us )
+			SleepUs(poll_us - elapsed_us);
 	}
 		
 	uint64_t end=TimestampUs();
-	;
+	
 	double seconds_elapsed=(end-start)/ 1000000.0L;
 	printf("%f\n", seconds_elapsed/i);
 }
@@ -170,27 +172,28 @@ int InitGyro(ev3dev::i2c_sensor *gyro)
 	return fd;
 }
 
-int ReadGyroAngleAndSpeed(int gyro_direct_fd, int16_t *out_angle, int16_t *out_speed)
+int ReadGyroAngle(int gyro_direct_fd, int16_t *out_angle)
 {
-	char temp[4];
+	char temp[2];
 	int result;
 	
 	if(lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1)
 		DieErrno("lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1");
 		
-	if( (result=read(gyro_direct_fd, temp, 4 )) == 4)
+	if( (result=read(gyro_direct_fd, temp, 2 )) == 2)
 	{
 		memcpy(out_angle, temp, 2);
-		memcpy(out_speed, temp+2, 2);
 		return 0;
 	}	
 		
 	if( (result <= 0 && errno != ENXIO) )
 		DieErrno("Read Gyro failed");
 		
+	if( result == 1)
+		Die("Incomplete I2C read");
+	
 	return -ENXIO;			
 }
-
 
 int EncodeDeadReconningPacket(const dead_reconning_packet &p, char *data)
 {
@@ -226,16 +229,16 @@ void SendDeadReconningFrameUDP(int socket, const sockaddr_in &destination, const
 
 void Usage()
 {
-	printf("ev3dead-reconning host port\n\n");
+	printf("ev3dead-reconning host port poll_ms\n\n");
 	printf("examples:\n");
-	printf("./ev3dead-reconning 192.168.0.103 8005\n");
+	printf("./ev3dead-reconning 192.168.0.103 8005 10\n");
 }
 
-int ProcessInput(int argc, char **argv, int *out_port)
+int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 {
-	long int port;
+	long int port, poll_ms;
 		
-	if(argc!=3)
+	if(argc!=4)
 		return -1;
 		
 	port=strtol(argv[2], NULL, 0);
@@ -245,6 +248,14 @@ int ProcessInput(int argc, char **argv, int *out_port)
 		return -1;
 	}
 	*out_port=port;
+	
+	poll_ms=strtol(argv[3], NULL, 0);
+	if(poll_ms <= 0 || poll_ms > 1000)
+	{
+		fprintf(stderr, "The argument poll_ms has to be in range <1, 1000>\n");
+		return -1;
+	}
+	*out_poll_ms=poll_ms;
 	
 	return 0;
 }

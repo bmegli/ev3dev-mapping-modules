@@ -96,23 +96,22 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::
 		
 	struct odometry_packet frame;
 	uint64_t start=TimestampUs();
-	int i;
+	int i, elapsed_us, poll_us=1000*poll_ms;
 	
-	
-				
 	for(i=0;i<BENCHS;++i)
-	{	
+	{
+		frame.timestamp_us=TimestampUs();	
 		frame.position_left=  motor_left.position();
 		frame.position_right=  motor_right.position();
-		frame.speed_left =  motor_left.speed();
-		frame.speed_right=  motor_right.speed();
-		frame.timestamp_us=TimestampUs();
 		SendOdometryFrameUDP(socket_udp, destination_udp, frame);
 
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;
-			
-		Sleep(poll_ms);
+		
+		elapsed_us=(int)(TimestampUs()-frame.timestamp_us);
+		
+		if( elapsed_us < poll_us )
+			SleepUs(poll_us - elapsed_us);
 	}
 		
 	uint64_t end=TimestampUs();

@@ -21,6 +21,11 @@ void Sleep(int ms)
 {	
 	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
+void SleepUs(int us)
+{	
+	std::this_thread::sleep_for(std::chrono::microseconds(us));
+}
+
 
 void DieErrno(const char *s)
 {
