@@ -38,7 +38,7 @@ sudo apt-get install git
 git clone --recursive https://github.com/bmegli/ev3dev-mapping-modules
 ```
 
-Don't forget `recursive` - the repository has two submodules.
+Don't forget `recursive` - the repository has submodules.
 
 ### Building the modules
 
