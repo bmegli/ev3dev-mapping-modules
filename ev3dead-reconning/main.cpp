@@ -50,13 +50,10 @@ struct dead_reconning_packet
 	uint64_t timestamp_us;
 	int32_t position_left;
 	int32_t position_right;
-	int32_t speed_left;
-	int32_t speed_right;
 	int16_t heading;
-	int16_t angular_speed;
 };
 
-const int DEAD_RECONNING_PACKET_BYTES=28; //2*2 + 4*4 + 8
+const int DEAD_RECONNING_PACKET_BYTES=18; //2 + 2*4 + 8
 
 void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::large_motor &left,const ev3dev::large_motor &right, int gyro_direct_fd, int poll_ms);
 
@@ -121,7 +118,7 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::
 		
 		if(ReadGyroAngle(gyro_direct_fd, &heading) == -ENXIO)
 		{ //this is workaround for occasional ENXIO problem
-			fprintf(stderr, "Got ENXIO, retrying %d\n", ++enxios);
+			fprintf(stderr, "ev3dead-reconning: got ENXIO, retrying %d\n", ++enxios);
 			continue; //we need to collect data again, this failure could be time consuming
 		}
 		frame.heading=heading;
@@ -140,34 +137,34 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::
 	uint64_t end=TimestampUs();
 	
 	double seconds_elapsed=(end-start)/ 1000000.0L;
-	printf("%f\n", seconds_elapsed/i);
+	printf("ev3dead-reconning: average %f seconds\n", seconds_elapsed/i);
 }
 
 void InitDriveMotor(ev3dev::large_motor *m)
 {
 	if(!m->connected())
-		Die("Motor not connected");
+		Die("ev3dead-reconning: motor not connected");
 }
 int InitGyro(ev3dev::i2c_sensor *gyro)
 {
 	int fd;
 	
 	if(!gyro->connected())	
-		Die("Unable to find gyroscope");
+		Die("ev3dead-reconning: unable to find gyroscope");
 		
 	gyro->set_poll_ms(0);
 	gyro->set_command("RESET");
 	
-	printf("Callculating gyroscope bias drift\n");
+	printf("ev3dead-reconning: callculating gyroscope bias drift\n");
 	Sleep(1000);
 	fflush(stdout);
 	
 	snprintf(GYRO_PATH+strlen(GYRO_PATH), GYRO_PATH_MAX, "%d/direct", gyro->device_index());
 	
 	if((fd=open(GYRO_PATH, O_RDONLY))==-1)	
-		DieErrno("open(GYRO_PATH, O_RDONLY)");
+		DieErrno("ev3dead-reconning: open(GYRO_PATH, O_RDONLY)");
 
-	printf("Gyroscope ready\n");
+	printf("ev3dead-reconning: gyroscope ready\n");
 
 	return fd;
 }
@@ -178,7 +175,7 @@ int ReadGyroAngle(int gyro_direct_fd, int16_t *out_angle)
 	int result;
 	
 	if(lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1)
-		DieErrno("lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1");
+		DieErrno("ev3dead-reconning: lseek(gyro_direct_fd, 0x42, SEEK_SET)==-1");
 		
 	if( (result=read(gyro_direct_fd, temp, 2 )) == 2)
 	{
@@ -187,10 +184,10 @@ int ReadGyroAngle(int gyro_direct_fd, int16_t *out_angle)
 	}	
 		
 	if( (result <= 0 && errno != ENXIO) )
-		DieErrno("Read Gyro failed");
+		DieErrno("ev3dead-reconning: read Gyro failed");
 		
 	if( result == 1)
-		Die("Incomplete I2C read");
+		Die("ev3dead-reconning: incomplete I2C read");
 	
 	return -ENXIO;			
 }
@@ -205,18 +202,9 @@ int EncodeDeadReconningPacket(const dead_reconning_packet &p, char *data)
 
 	*((uint32_t*)data)= htobe32(p.position_right);
 	data += sizeof(p.position_right);
-
-	*((uint32_t*)data)= htobe32(p.speed_left);
-	data += sizeof(p.speed_left);
-
-	*((uint32_t*)data)= htobe32(p.speed_right);
-	data += sizeof(p.speed_right);
 	
 	*((uint16_t*)data)= htobe16(p.heading);
 	data += sizeof(p.heading);
-
-	*((uint16_t*)data)= htobe16(p.angular_speed);
-	data += sizeof(p.angular_speed);
 	
 	return DEAD_RECONNING_PACKET_BYTES;	
 }
@@ -244,7 +232,7 @@ int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 	port=strtol(argv[2], NULL, 0);
 	if(port <= 0 || port > 65535)
 	{
-		fprintf(stderr, "The argument port has to be in range <1, 65535>\n");
+		fprintf(stderr, "ev3dead-reconning: the argument port has to be in range <1, 65535>\n");
 		return -1;
 	}
 	*out_port=port;
@@ -252,7 +240,7 @@ int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 	poll_ms=strtol(argv[3], NULL, 0);
 	if(poll_ms <= 0 || poll_ms > 1000)
 	{
-		fprintf(stderr, "The argument poll_ms has to be in range <1, 1000>\n");
+		fprintf(stderr, "ev3dead-reconning: the argument poll_ms has to be in range <1, 1000>\n");
 		return -1;
 	}
 	*out_poll_ms=poll_ms;
