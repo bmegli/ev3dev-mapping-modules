@@ -93,7 +93,7 @@ int main(int argc, char **argv)
 	StopMotors(&motor_left, &motor_right);
 	CloseNetworkUDP(socket_udp);
 		
-	printf("ev3drive: bye\n")	
+	printf("ev3drive: bye\n");
 		
 	return 0;
 }
