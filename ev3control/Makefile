@@ -1,6 +1,6 @@
 TARGET = ev3control
 SHARED = ../lib/shared
-OBJS = main.o modules.o $(SHARED)/net_udp.o $(SHARED)/misc.o
+OBJS = main.o control.o control_protocol.o net_tcp.o $(SHARED)/misc.o
 
 INCLUDE = ../lib
 
@@ -14,18 +14,21 @@ LFLAGS = -Wall $(DEBUG)
 $(TARGET) : $(OBJS)
 	$(CXX) $(LFLAGS) $(OBJS) -o $(TARGET)
 
-main.o : main.cpp $(SHARED)/misc.h $(SHARED)/net_udp.h 
+main.o : main.cpp $(SHARED)/misc.h net_tcp.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
 
-modules.o: modules.h modules.cpp $(SHARED)/misc.h
-	$(CXX) $(CXX_FLAGS) modules.cpp
+control.o: control.h control.cpp $(SHARED)/misc.h
+	$(CXX) $(CXX_FLAGS) control.cpp
+
+control_protocol.o: control_protocol.h control_protocol.cpp
+	$(CXX) $(CXX_FLAGS) control_protocol.cpp
+		
+net_tcp.o: net_tcp.h net_tcp.cpp $(SHARED)/misc.h
+	$(CXX) $(CXX_FLAGS) net_tcp.cpp
 	
 $(SHARED)/misc.o : $(SHARED)/misc.h $(SHARED)/misc.cpp
 	$(MAKE) -C $(SHARED)
 	
-$(SHARED)/net_udp.o: $(SHARED)/net_udp.h $(SHARED)/net_udp.cpp $(SHARED)/misc.h
-	$(MAKE) -C $(SHARED)
-
 clean:
 	\rm -f *.o $(TARGET)
 	$(MAKE) -C $(SHARED) clean

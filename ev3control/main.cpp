@@ -16,36 +16,38 @@
   * This program was created for EV3 with ev3dev OS
   *  
   * ev3control:
-  * -reads UDP messages
+  * -starts TCP/IP server and waits for client
+  * -reads messages
   * -starts modules on request
+  * -disables modules on request (by closing their stdin so that they get EOF on read)
   * -monitors modules state
-  * -stops modules on request (by closing their stdin so that they get EOF on read)
+  * -informs peer on module state changes
   *
   * See Usage() function for syntax details (or run the program without arguments)
   * 
-  * 
   *  This is PRELIMINARY version:
   * -it's insecure (can run arbirary program on EV3!)
-  * -it will transition to TCP/IP (UDP is not really applicable here in the long run!)
-  * -the protocol will shift to variable length messages
-  * -once module is loaded ev3control has to be restarted to change it's parameters
-  * -code needs cleanup
-  * 
+  *
+  * For funtional requirements see:
+  * https://github.com/bmegli/ev3dev-mapping-modules/issues/20 
   */
 
-
-#include "modules.h"
+#include "control.h"
+#include "control_protocol.h"
+#include "net_tcp.h"
 
 #include "shared/misc.h"
-#include "shared/net_udp.h"
 
+#include <sys/socket.h> //send
+
+#include <unistd.h> //read
 #include <signal.h> //sigaction, sig_atomic_t
-#include <endian.h> //htobe16, htobe32, htobe64
 #include <stdio.h> //printf, etc
 #include <errno.h> // errno
 #include <stdlib.h> //EXIT_FAILURE
-#include <string.h> //memcpy
-#include <map> //map
+
+
+#include <list> //list
 #include <string> //string
 
 using namespace std;
@@ -53,223 +55,332 @@ using namespace std;
 // GLOBAL VARIABLES
 volatile sig_atomic_t g_finish_program=0;
 
-enum Commands {ENABLE=0, DISABLE=1, DISABLE_ALL=3, ENABLED=4, DISABLED=5, FAILED=6 };
+void ServerLoop(int serv_socket, int timeout_ms, Control *control);
+void MainClientLoop(int client_socket, Control *control);
 
-struct control_packet
-{
-	uint64_t timestamp_us;
-	int16_t command;
-	int16_t creation_delay_ms;
-	char unique_name[MODULE_NAME_WITH0_MAX];
-	char call[MODULE_CALL_WITH0_MAX];
-};
+bool ReceiveMessage(int client_socket, Control *control);
+bool ProcessMessage(int client_socket, const char *msg, char *response, Control *control);
+void CheckProtocolVersion(const control_header &header);
+bool CheckCommandSupport(const control_header &header);
 
-const int CONTROL_PACKET_BYTES = sizeof(uint64_t) +  2 * sizeof(int16_t) +  MODULE_NAME_WITH0_MAX + MODULE_CALL_WITH0_MAX;   //8 + 4 + 20+128+=160
+bool ProcessMessageKEEPALIVE(int client_socket, const char *payload, const control_header &header, char *response, Control *control);
+bool ProcessMessageENABLE(int client_socket, const char *payload, const control_header &header, char *response, Control *control);
+bool ProcessMessageDISABLE(int client_socket, const char *payload, const control_header &header, char *response, Control *control);
+bool ProcessMessageDISABLE_ALL(int client_socket, const char *payload, const control_header &header, char *response, Control *control);
 
-void MainLoop(int socket_udp, map<string, robot_module> &modules);
-void ProcessMessage(int socket_udp, const struct sockaddr_in &address, const control_packet &packet, map<string, robot_module> &modules);
-void FailedModulesNotify(int socket_udp, const struct sockaddr_in &address, map<string, robot_module> &modules);
+bool CheckModulesStates(int client_socket, char *response, Control *control);
 
-int RecvControlPacket(int socket_udp,  struct sockaddr_in *host_address, control_packet *packet);
-void SendControlPacket(int socket_udp, const sockaddr_in &dst, const control_packet &packet);
-void DecodeControlPacket(control_packet *packet, const char *data);
-int EncodeControlPacket(const control_packet &p, char *data);
+bool SendMessage(int sock, char *msg, int msg_len);
 
-robot_module ModuleFromControlPacket(const control_packet &packet);
-void ControlPacketFromModule(const robot_module &module, control_packet *packet, Commands command);
+int EncodeModuleMessage(char *buffer, int buffer_length, ControlCommands command, const std::string &module_name);
+int EncodeFailedMessage(char *buffer, int buffer_length, const std::string &module_name, int32_t status);
+int EncodeKeepaliveMessage(char *buffer, int buffer_length);
 
 void Usage();
 void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms);
 void Finish(int signal);
+void IgnoreSIGPIPE();
 
 int main(int argc, char **argv)
 {			
-	int socket_udp, port, timeout_ms;
+	int serv_socket, port, timeout_ms;
+	Control control;
 	
-	map<string, robot_module> modules;
-
 	ProcessArguments(argc, argv, &port, &timeout_ms);
 	
 	//init
 	RegisterSignals(Finish);
+	IgnoreSIGPIPE();
+	InitNetworkTCP(&serv_socket, port);
 
-	InitNetworkUDP(&socket_udp, NULL, NULL, port, timeout_ms);
-
+	
 	//work
-	MainLoop(socket_udp, modules);
+	ServerLoop(serv_socket, timeout_ms, &control);
 	
 	//cleanup
-	DisableModules(modules);
-	CloseNetworkUDP(socket_udp);
+	control.DisableModules();
+	CloseNetworkTCP(serv_socket);
 		
+	printf("ev3control: bye\n");	
    	return 0;
 }
 
-void MainLoop(int socket_udp, map<string, robot_module> &modules)
+void ServerLoop(int serv_socket, int timeout_ms, Control *control)
 {
-	int status;
-	bool received_first=false; //and initialized host address
-	control_packet packet; 
-	struct sockaddr_in host_address;
-		
+	int client_socket;
+	
 	while(!g_finish_program)
 	{
-		status=RecvControlPacket(socket_udp,&host_address, &packet);
-		if(status < 0)
+		if( WaitForClientTCP(serv_socket, timeout_ms, &client_socket) == 0) //timeout
+			continue; //check g_finish_program
+		
+		printf("ev3control: client connected\n");
+		MainClientLoop(client_socket, control);
+		printf("ev3control: client disconnected\n");
+		
+		CloseNetworkTCP(client_socket);
+	}
+	
+}
+
+void MainClientLoop(int client_socket, Control *control)
+{
+	while(!g_finish_program)
+	{
+		if(!ReceiveMessage(client_socket, control))
 			break;
-		if(status == 0)
-		{//timeout, check modules status
-			if( received_first &&  !EnabledModulesRunning(modules) )
-				FailedModulesNotify(socket_udp, host_address, modules);
-		}
-		else
-		{
-			ProcessMessage(socket_udp, host_address, packet, modules);
-			received_first=true;
-		}
 	}
 }
 
-void ProcessMessage(int socket_udp, const struct sockaddr_in &address, const control_packet &packet, map<string, robot_module> &modules)
+// false on disconnect, true otherwise 
+bool ReceiveMessage(int client_socket, Control *control)
 {
-	static control_packet response;
+	static char buffer[CONTROL_BUFFER_BYTES];	
+	static char response_buffer[CONTROL_BUFFER_BYTES];		
 	
-	if(packet.command == ENABLE)
+	char *data=buffer;
+	
+	int received=0, bytes=CONTROL_HEADER_BYTES, result;
+	
+	while(received<bytes)
 	{
-		printf("Request: ENABLE \"%s\" with \"%s\" \n", packet.unique_name, packet.call);
-
-		if( modules.find(packet.unique_name) == modules.end() )
-			modules.insert(pair<string, robot_module>(packet.unique_name, ModuleFromControlPacket(packet)) );
+		if( (result=read(client_socket, data+received, bytes-received)) == -1)
+		{
+			if(errno==EAGAIN || errno==EWOULDBLOCK) //timeout
+			{
+				if( !CheckModulesStates(client_socket, response_buffer, control))
+				{
+					printf("Check modules failed\n");
+					return false;
+				}
+				continue;
+			}
+			else //maybe handle EINTR separately
+			{
+				perror("ev3control: read\n");
+				return false; //connection closed
+			}
+		}
+		else if(result == 0)
+			return false;
 			
-		EnableModule(modules, packet.unique_name);
-		ControlPacketFromModule(modules[packet.unique_name], &response, ENABLED); 
-		SendControlPacket(socket_udp, address, response);
-	}
-	else if(packet.command == DISABLE)
-	{
-		printf("Request: DISABLE \"%s\" with \"%s\" \n", packet.unique_name, packet.call);
-		if( modules.find(packet.unique_name) == modules.end() )
-		{
-			fprintf(stderr, "Requested to diable module but module doesn't exist\n");
-			return;
+		received += result;
+		
+		if(data == buffer && received==CONTROL_HEADER_BYTES)
+		{ //we have received complete header, now get payload
+			data=buffer+CONTROL_HEADER_BYTES;
+			bytes = GetControlHeaderPayloadLength(buffer);
+			received=0;
+			if(bytes > CONTROL_BUFFER_BYTES-CONTROL_HEADER_BYTES)
+			{
+				fprintf(stderr, "ev3control: ignoring message, doesn't fit buffer: payload %d, buffer is %d\n", bytes, CONTROL_BUFFER_BYTES-CONTROL_HEADER_BYTES);
+				return true;
+			}
 		}
-		DisableModule(modules, packet.unique_name);
-		ControlPacketFromModule(modules[packet.unique_name], &response, DISABLED);
-		SendControlPacket(socket_udp, address, response);
-	}
-	else if(packet.command == DISABLE_ALL)
-	{
-		printf("Request: DISABLE_ALL modules\n");
-		DisableModules(modules);
-		//to do - some response
-	}
-	else
-		fprintf(stderr, "Ignoring unknown command: %d\n", packet.command);	
+	}		
+	return ProcessMessage(client_socket, buffer, response_buffer, control);
 }
-void FailedModulesNotify(int socket_udp, const struct sockaddr_in &address, map<string, robot_module> &modules)
+
+bool ProcessMessage(int client_socket, const char *msg, char *response, Control *control)
 {
-	static control_packet packet;
+	static bool (*handlers[])(int, const char *, const control_header &,char *,Control *)={ProcessMessageKEEPALIVE, ProcessMessageENABLE, ProcessMessageDISABLE, ProcessMessageDISABLE_ALL};
+	static control_header header;
 	
-	map<string, robot_module>::iterator it;
-	for(it=modules.begin();it!=modules.end();++it)
-		if(it->second.state==MODULE_FAILED)
+	GetControlHeader(msg, &header);
+	
+	CheckProtocolVersion(header);
+	if( !CheckCommandSupport(header) )
+		return true;
+		
+	return handlers[header.command](client_socket, msg+CONTROL_HEADER_BYTES, header,response, control);
+}
+
+
+void CheckProtocolVersion(const control_header &header)
+{
+	static bool protocol_version_not_yet_warned=true;
+	if(protocol_version_not_yet_warned && header.protocol_version != CONTROL_PROTOCOL_VERSION)
+	{
+		fprintf(stderr, "ev3control: received message with protocol version %d, implementation version is %d\n", header.protocol_version, CONTROL_PROTOCOL_VERSION);
+		fprintf(stderr, "ev3control: some functionality may not be supported\n");
+		protocol_version_not_yet_warned=false;
+	}
+}
+
+bool CheckCommandSupport(const control_header &header)
+{
+	if(header.command >= KEEPALIVE && header.command <= DISABLE_ALL)
+		return true;
+	fprintf(stderr, "ev3control: ignoring message with unsupported command %d\n", header.command);
+	return false;
+}
+
+
+bool ProcessMessageKEEPALIVE(int client_socket, const char *payload, const control_header &header, char *response, Control *control)
+{
+	return CheckModulesStates(client_socket, response, control);
+}
+
+bool ProcessMessageENABLE(int client_socket, const char *payload, const control_header &header, char *response, Control *control)
+{
+	static control_attribute attributes[3];
+	const static ControlAttributes expected[]={UNIQUE_NAME, CALL, CREATION_DELAY_MS};
+	
+	if(!ParseControlMessage(header, payload, attributes, 3, expected))
+	{
+		fprintf(stderr, "ev3control: ignoring invalid command %d\n", header.command);
+		return true;
+	}
+
+	string unique_name(GetControlAttributeString(attributes[0]));
+	string call(GetControlAttributeString(attributes[1]));
+	uint16_t creation_delay_ms = GetControlAttributeU16(attributes[2]);
+	
+	printf("ev3control: request to enable %s\n", unique_name.c_str());
+	
+	Module module;
+	bool contains_module=control->ContainsModule(unique_name, &module);
+	
+	if( contains_module && module.state == MODULE_ENABLED && control->CheckModuleState(unique_name) == MODULE_ENABLED )
+	{
+		fprintf(stderr, "ev3control: request to enable %s but it is enabled\n", unique_name.c_str());
+		
+		int response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, ENABLED, unique_name);
+		return SendMessage(client_socket, response, response_length);
+	}
+	
+	if(!contains_module)
+		control->InsertModule(unique_name, creation_delay_ms);
+	
+	control->EnableModule(unique_name, call);
+
+	printf("ev3control: enabled module: %s\n", unique_name.c_str());
+	
+	int response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, ENABLED, unique_name);
+	
+	return SendMessage(client_socket, response, response_length);
+}
+bool ProcessMessageDISABLE(int client_socket, const char *payload, const control_header &header, char *response, Control *control)
+{
+	static control_attribute attributes[1];
+	const static ControlAttributes expected[]={UNIQUE_NAME};
+
+	if(!ParseControlMessage(header, payload, attributes, 1, expected))
+	{
+		fprintf(stderr, "ev3control: ignoring invalid command %d\n", header.command);
+		return true;
+	}
+	
+	string unique_name(GetControlAttributeString(attributes[0]));	
+		
+	printf("ev3control: request to disable %s\n", unique_name.c_str());
+				
+	Module module;
+	bool contains_module=control->ContainsModule(unique_name, &module);
+	
+	if( !contains_module)
+	{
+		fprintf(stderr, "ev3control: request to disable %s but no such module\n", unique_name.c_str());
+		return true;
+	}
+	
+	if(module.state != MODULE_ENABLED)
+	{
+		fprintf(stderr, "ev3control: request to disable %s module but is not enabled\n", unique_name.c_str());
+		
+		int response_length;
+		if(module.state==MODULE_DISABLED)
+			response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, DISABLED, unique_name);
+		else //if(module.state==MODULE_FAILED)
+			response_length=EncodeFailedMessage(response, CONTROL_BUFFER_BYTES, unique_name, module.return_value);
+		
+		return SendMessage(client_socket, response, response_length);
+	}
+	
+	control->DisableModule(unique_name);
+	printf("ev3control: disabled module: %s\n", unique_name.c_str());
+	
+	int response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, DISABLED, unique_name);
+	return SendMessage(client_socket, response, response_length);
+}
+bool ProcessMessageDISABLE_ALL(int client_socket, const char *payload, const control_header &header, char *response, Control *control)
+{
+	printf("ev3control: request to disable all modules\n");
+
+	list<string> disabled=control->DisableModules();
+	
+	for(list<string>::iterator it=disabled.begin();it!=disabled.end();++it)
+	{
+		printf("ev3control: disabled module: %s\n", it->c_str());
+		int response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, DISABLED, *it);
+		if(!SendMessage(client_socket, response, response_length))
+			return false;
+	}
+	return true;
+}
+
+bool CheckModulesStates(int client_socket, char *response, Control *control)
+{
+	list<FailedModule> failed=control->CheckModulesStates();
+	
+	for(list<FailedModule>::iterator it=failed.begin();it!=failed.end();++it)
+	{
+		printf("ev3control: %s failed with status %d\n", it->name.c_str(), it->status);
+		int response_length=EncodeFailedMessage(response, CONTROL_BUFFER_BYTES, it->name, it->status);
+		if(!SendMessage(client_socket, response, response_length))
+			return false;
+	}	
+	if(failed.size() == 0)
+	{
+		int response_length=EncodeKeepaliveMessage(response, CONTROL_BUFFER_BYTES);
+		return SendMessage(client_socket, response, response_length);
+	}
+	return true;
+}
+
+bool SendMessage(int sock, char *msg, int msg_len)
+{
+	int data_sent=0;
+	int data_written=0;
+	while(data_sent<msg_len)
+	{
+		if( ( data_written=send(sock , msg+data_sent , msg_len-data_sent, 0) ) == -1 )
 		{
-			ControlPacketFromModule(it->second, &packet, FAILED);
-			SendControlPacket(socket_udp, address, packet);
+			perror("ev3control: socket send failed");
+			return false;
 		}
+		data_sent+=data_written;
+	}
+	return true;
 }
- 
-int RecvControlPacket(int socket_udp, struct sockaddr_in *host_address, control_packet *packet)
+
+int EncodeModuleMessage(char *buffer, int buffer_length, ControlCommands command, const std::string &module_name)
 {
-	static char buffer[CONTROL_PACKET_BYTES];	
-	int recv_len;
-	socklen_t host_address_length=sizeof(*host_address);
-
-	if((recv_len = recvfrom(socket_udp, buffer, CONTROL_PACKET_BYTES, 0,(struct sockaddr*) host_address, &host_address_length)) == -1)	
-	{
-		if(errno==EAGAIN || errno==EWOULDBLOCK || errno==EINPROGRESS)
-			return 0; //timeout!
-		perror("Error while receiving control packet");
-		return -1;
-	}
-
-	if(recv_len < CONTROL_PACKET_BYTES)
-	{
-		fprintf(stderr, "Received incomplete datagram\n");
-		return -1; 
-	}
+	if( !PutControlHeader(buffer, buffer_length, TimestampUs(), command) 
+	|| !PutControlAttributeString(buffer, buffer_length, UNIQUE_NAME, module_name.c_str()) )
+		Die("ev3control: unable to encode module message\n");
 	
-	if(host_address_length>sizeof(*host_address))
-	{ //only warn for now
-		fprintf(stderr, "Warning - address longer than supplied structure! Not filled!");	
-	}
-	DecodeControlPacket(packet, buffer);	
+	return GetControlMessageLength(buffer);
+}
+int EncodeFailedMessage(char *buffer, int buffer_length, const std::string &module_name, int32_t status)
+{
+	if(!EncodeModuleMessage(buffer, buffer_length, FAILED, module_name) 
+	|| !PutControlAttributeI32(buffer, buffer_length, RETURN_VALUE, status))
+		Die("ev3control: unable to encode module failed message\n");
 
-	return recv_len;	       
+	return GetControlMessageLength(buffer);
 }
 
-void SendControlPacket(int socket_udp, const sockaddr_in &dst, const control_packet &packet)
+int EncodeKeepaliveMessage(char *buffer, int buffer_length)
 {
-	static char buffer[CONTROL_PACKET_BYTES];
-	EncodeControlPacket(packet, buffer);
-	SendToUDP(socket_udp, dst, buffer, CONTROL_PACKET_BYTES);
-}
- 
-void DecodeControlPacket(control_packet *packet, const char *data)
-{
-	packet->timestamp_us=be64toh(*((uint64_t*)data));
-	packet->command=be16toh(*((int16_t*)(data+8)));
-	packet->creation_delay_ms=be16toh(*((int16_t*)(data+10)));
-	memcpy(packet->unique_name, data + 12, MODULE_NAME_WITH0_MAX);
-	packet->unique_name[MODULE_NAME_WITH0_MAX-1]='\0';
-	memcpy(packet->call, data + 12 + MODULE_NAME_WITH0_MAX, MODULE_CALL_WITH0_MAX);
-	packet->call[MODULE_CALL_WITH0_MAX-1]='\0';
-}
-int EncodeControlPacket(const control_packet &p, char *data)
-{
-	*((uint64_t*)data) = htobe64(p.timestamp_us);
-	data += sizeof(p.timestamp_us);
-
-	*((int16_t*)data)= htobe16(p.command);
-	data += sizeof(p.command);
-
-	*((int16_t*)data)= htobe16(p.creation_delay_ms);
-	data += sizeof(p.creation_delay_ms);
-
-	memcpy(data, p.unique_name, MODULE_NAME_WITH0_MAX);
-	*(data+MODULE_NAME_WITH0_MAX-1)='\0';
-	data += MODULE_NAME_WITH0_MAX;
-
-	memcpy(data, p.call, MODULE_CALL_WITH0_MAX);
-	*(data+MODULE_CALL_WITH0_MAX-1)='\0';
-	data += MODULE_CALL_WITH0_MAX;
-	
-	return CONTROL_PACKET_BYTES;	
-}
-
-robot_module ModuleFromControlPacket(const control_packet &packet)
-{
-	robot_module module;
-	module.unique_name=string(packet.unique_name);
-	module.call=string(packet.call);
-	module.creation_sleep_ms=packet.creation_delay_ms;
-	module.state=MODULE_DISABLED;
-	module.pid=0;
-	module.write_fd=0;	
-	return module;
-}
-void ControlPacketFromModule(const robot_module &module, control_packet *packet, Commands command)
-{
-	packet->timestamp_us=TimestampUs();
-	packet->command=command;
-	packet->creation_delay_ms=module.creation_sleep_ms;
-	memcpy(packet->unique_name, module.unique_name.c_str(), module.unique_name.size()+1);
-	memcpy(packet->call, module.call.c_str(), module.call.size()+1);
+	if( !PutControlHeader(buffer, buffer_length, TimestampUs(), KEEPALIVE) )
+		Die("ev3control: unable to encode keepalive message\n");
+	return GetControlMessageLength(buffer);
 }
 
 void Usage()
 {
-	printf("ev3control udp_port timeout_ms\n\n");
+	printf("ev3control tcp_port timeout_ms\n\n");
 	printf("examples:\n");
 	printf("./ev3control 8004 500\n");
 }
@@ -294,3 +405,8 @@ void Finish(int signal)
 	g_finish_program=1;
 }
 
+void IgnoreSIGPIPE()
+{
+	if( signal(SIGPIPE, SIG_IGN) == SIG_ERR )
+		DieErrno("ev3control: unable to ignore SIGPIPE");
+}
