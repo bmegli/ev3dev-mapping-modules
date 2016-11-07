@@ -97,7 +97,7 @@ int main(int argc, char **argv)
 	 
  	if( InitLaser(&laser, laser_tty, LASER_FRAMES_PER_READ) !=SUCCESS )
 	{
-		fprintf(stderr, "Init laser failed\n");
+		fprintf(stderr, "ev3laser: init laser failed\n");
 		g_finish_program=true;
 	}
 
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 	motor.stop();
 	CloseNetworkUDP(socket_udp);
 
-	printf("bye\n");
+	printf("ev3laser: bye\n");
 
 	return 0;	
 }
@@ -129,7 +129,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 		
 		if( (status=ReadLaser(laser, frames)) != SUCCESS )
 		{
-			fprintf(stderr, "ReadLaser failed with status %d\n", status);
+			fprintf(stderr, "ev3laser: ReadLaser failed with status %d\n", status);
 			break;
 		}
 		// when read is finished, next read proceeds
@@ -154,8 +154,8 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 	
 	uint64_t end=TimestampUs();
 	double seconds_elapsed=(end-start)/ 1000000.0L;
-	printf("%f\n", seconds_elapsed/counter);
-	printf("Last laser speed %f\n", packet.laser_speed/64.0);
+	printf("ev3laser: average loop %f seconds\n", seconds_elapsed/counter);
+	printf("ev3laser: last laser speed %f\n", packet.laser_speed/64.0);
 }
 
 
@@ -169,7 +169,7 @@ int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle)
 	port=strtol(argv[4], NULL, 0);
 	if(port <= 0 || port > 65535)
 	{
-		fprintf(stderr, "The argument port has to be in range <1, 65535>\n");
+		fprintf(stderr, "ev3laser: the argument port has to be in range <1, 65535>\n");
 		return -1;
 	}
 	*out_port=port;
@@ -199,7 +199,7 @@ void Finish(int signal)
 void InitLaserMotor(ev3dev::dc_motor *m, int duty_cycle)
 {
 	if(!m->connected())
-		Die("Laser motor not connected");
+		Die("ev3laser: laser motor not connected");
 	m->set_stop_action(ev3dev::motor::stop_action_coast);
 
 	m->set_duty_cycle_sp(duty_cycle);

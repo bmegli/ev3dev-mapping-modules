@@ -84,6 +84,8 @@ int main(int argc, char **argv)
 	
 	CloseNetworkUDP(socket_udp);
 
+	printf("ev3odemtry: bye\n");
+	
 	return 0;
 }
 
@@ -113,7 +115,7 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, const ev3dev::
 		
 	uint64_t end=TimestampUs();
 	double seconds_elapsed=(end-start)/ 1000000.0L;
-	printf("ev3odometry: average %f seconds\n", seconds_elapsed/i);
+	printf("ev3odometry: average loop %f seconds\n", seconds_elapsed/i);
 }
 
 void InitDriveMotor(ev3dev::large_motor *m)

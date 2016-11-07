@@ -93,6 +93,8 @@ int main(int argc, char **argv)
 	StopMotors(&motor_left, &motor_right);
 	CloseNetworkUDP(socket_udp);
 		
+	printf("ev3drive: bye\n")	
+		
 	return 0;
 }
 
@@ -109,7 +111,7 @@ void MainLoop(int socket_udp, large_motor *left, large_motor *right)
 		if(status == 0) //timeout
 		{
 			StopMotors(left, right);
-			fprintf(stderr, "waiting for drive controller...\n");
+			fprintf(stderr, "ev3drive: waiting for drive controller...\n");
 		}
 		else
 			ProcessMessage(packet, left, right);
@@ -153,7 +155,7 @@ void ProcessMessage(const drive_packet &packet,large_motor *left, large_motor *r
 void InitMotor(large_motor *m)
 {
 	if(!m->connected())
-		Die("Motor not connected");
+		Die("ev3drive: motor not connected");
 	m->set_stop_action(m->stop_action_coast);
 }
 
@@ -174,12 +176,12 @@ int RecvDrivePacket(int socket_udp, drive_packet *packet)
 	{
 		if(errno==EAGAIN || errno==EWOULDBLOCK || errno==EINPROGRESS)
 			return 0; //timeout!
-		perror("Error while receiving control packet");
+		perror("ev3drive: error while receiving control packet");
 		return -1;
 	}
 	if(recv_len < CONTROL_PACKET_BYTES)
 	{
-		fprintf(stderr, "Received incomplete datagram\n");
+		fprintf(stderr, "ev3drive: received incomplete datagram\n");
 		return -1; 
 	}
 	DecodeDrivePacket(packet, buffer);	
@@ -214,8 +216,21 @@ void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
 	long temp;
 	
 	temp=strtol(argv[1], NULL, 0);
+	
+	if(temp <= 0 || temp > 65535)
+	{
+		fprintf(stderr, "ev3drive: the argument port has to be in range <1, 65535>\n");
+		exit(EXIT_SUCCESS);
+	}
+
 	*port=temp;
 	temp=strtol(argv[2], NULL, 0);
+	if(temp <= 0 || temp > 10000)
+	{
+		fprintf(stderr, "ev3drive: the argument timeout_ms has to be in range <1, 10000>\n");
+		exit(EXIT_SUCCESS);
+	}
+	
 	*timeout_ms=temp;
 }
 void Finish(int signal)

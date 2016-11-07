@@ -87,6 +87,8 @@ int main(int argc, char **argv)
 	
 	wifi_scan_close(wifi);
 
+	printf("ev3wifi: bye\n");
+	
 	return 0;
 }
 
@@ -127,7 +129,7 @@ void MainLoop(int socket_udp, const sockaddr_in &destination_udp, wifi_scan *wif
 	uint64_t end=TimestampUs();
 	
 	double seconds_elapsed=(end-start)/ 1000000.0L;
-	printf("%f\n", seconds_elapsed/i);
+	printf("ev3wifi: average loop %f seconds\n", seconds_elapsed/i);
 }
 
 int EncodeWifiPacket(const wifi_packet &p, char *data)
@@ -176,7 +178,7 @@ int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 	port=strtol(argv[2], NULL, 0);
 	if(port <= 0 || port > 65535)
 	{
-		fprintf(stderr, "The argument port has to be in range <1, 65535>\n");
+		fprintf(stderr, "ev3wifi: the argument port has to be in range <1, 65535>\n");
 		return -1;
 	}
 	*out_port=port;
@@ -184,7 +186,7 @@ int ProcessInput(int argc, char **argv, int *out_port, int *out_poll_ms)
 	poll=strtol(argv[4], NULL, 0);
 	if(poll <= 0)
 	{
-		fprintf(stderr, "The argument poll has to be greater than 0\n");
+		fprintf(stderr, "ev3wifi: the argument poll_ms has to be greater than 0\n");
 		return -1;
 	}
 	*out_poll_ms=poll;
