@@ -55,7 +55,7 @@ const int LASER_PACKET_BYTES = 12 + 16 * LASER_FRAMES_PER_READ;
 
 void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lidar_data *laser, ev3dev::dc_motor *laser_motor);
 
-int ProcessInput(int argc, char **argv, int *port, int *duty_cycle);
+int ProcessInput(int argc, char **argv, int *port, int *duty_cycle, int *crc_tolerance_pct);
 void Usage();
 void RegisterSignals();
 void Finish(int signal);
@@ -74,9 +74,9 @@ int main(int argc, char **argv)
 	struct sockaddr_in address_udp;
 	struct xv11lidar_data laser;    
 	int port;
-	int  duty_cycle;
+	int duty_cycle, crc_tolerance_pct;
 	
-	if( ProcessInput(argc, argv, &port, &duty_cycle) )
+	if( ProcessInput(argc, argv, &port, &duty_cycle, &crc_tolerance_pct) )
 	{
 		Usage();
 		return 0;
@@ -93,9 +93,9 @@ int main(int argc, char **argv)
 	InitNetworkUDP(&socket_udp, &address_udp, host, port, 0);
 	InitLaserMotor(&motor, duty_cycle);
 	//let the motor spin for a while
-	Sleep(1000); 
+	Sleep(2000); 
 	 
- 	if( InitLaser(&laser, laser_tty, LASER_FRAMES_PER_READ) !=SUCCESS )
+ 	if( InitLaser(&laser, laser_tty, LASER_FRAMES_PER_READ, crc_tolerance_pct) !=SUCCESS )
 	{
 		fprintf(stderr, "ev3laser: init laser failed\n");
 		g_finish_program=true;
@@ -159,11 +159,11 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 }
 
 
-int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle)
+int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle, int *crc_tolerance_pct)
 {
-	long int port, duty;
+	long int port, duty, crc;
 				
-	if(argc!=6)
+	if(argc!=7)
 		return -1;
 		
 	port=strtol(argv[4], NULL, 0);
@@ -174,21 +174,30 @@ int ProcessInput(int argc, char **argv, int *out_port, int *duty_cycle)
 	}
 	*out_port=port;
 
-	duty=-40;
-	if(argc == 6)
+	duty=strtol(argv[5], NULL, 0);
+	if(duty <= 0 || duty > 100)
 	{
-		duty=strtol(argv[5], NULL, 0);
-		*duty_cycle=duty;
+		fprintf(stderr, "ev3laser: the argument duty_cycle has to be in range <0, 100>\n");
+		return -1;
 	}
-	
+	*duty_cycle=duty;
+
+	crc=strtol(argv[6], NULL, 0);
+	if(crc < 0 || crc > 100)
+	{
+		fprintf(stderr, "ev3laser: the argument crc_tolerance_pct has to be in range <0, 100>\n");
+		return -1;
+	}
+	*crc_tolerance_pct=crc;
+		
 	return 0;
 }
 void Usage()
 {
-	printf("ev3laser tty motor_port host port duty_cycle\n\n");
+	printf("ev3laser tty motor_port host port duty_cycle crc_tolerance_pct\n\n");
 	printf("examples:\n");
-	printf("./ev3laser /dev/tty_in1 outC 192.168.0.103 8001 -40\n");
-	printf("./ev3laser /dev/tty_in2 outB 192.168.0.103 8002 40\n");
+	printf("./ev3laser /dev/tty_in2 outB 192.168.0.103 8002 40 10\n");
+	printf("./ev3laser /dev/tty_in1 outC 192.168.0.103 8001 -40 10\n");
 }
 
 void Finish(int signal)
