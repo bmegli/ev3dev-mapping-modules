@@ -93,7 +93,7 @@ int main(int argc, char **argv)
 	InitNetworkUDP(&socket_udp, &address_udp, host, port, 0);
 	InitLaserMotor(&motor, duty_cycle);
 	//let the motor spin for a while
-	Sleep(1000); 
+	Sleep(2000); 
 	 
  	if( InitLaser(&laser, laser_tty, LASER_FRAMES_PER_READ, crc_tolerance_pct) !=SUCCESS )
 	{
