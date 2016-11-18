@@ -147,10 +147,13 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 				++sane_frames;
 				rpm+=frames[i].speed;
 			}
-
 		}
 		
 		packet.laser_speed=rpm/sane_frames;
+	
+		
+		timestamp_reference = timestamp_measured; //disable timestamp corrections until checked
+		/*	
 		timespan_computed = MICROSECONDS_PER_MINUTE * LASER_FRAMES_PER_READ * LASER_SPEED_FIXED_POINT_PRECISION / (LASER_FRAMES_PER_ROTATION * packet.laser_speed);
 		if(timestamp_measured - timespan_computed < timestamp_reference)
 		{ // new timestamp has better value, use it from now on
@@ -165,7 +168,8 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 				max_correction= correction;
 			total_correction += correction;
 		}
-
+		*/
+ 
 		SendLaserPacket(socket_udp, address, packet);
 		
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
