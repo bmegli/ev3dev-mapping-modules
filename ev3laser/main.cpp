@@ -116,16 +116,16 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 {
 	struct laser_packet packet;
 	struct xv11lidar_frame frames[LASER_FRAMES_PER_READ];
-	uint64_t timestamp_reference, timestamp_measured, timespan_computed, correction, total_correction=0, max_correction=0;
+	uint64_t last_timestamp;
 	uint32_t rpm, sane_frames;
 	int status, counter, benchs=INT_MAX;
 	
 	uint64_t start=TimestampUs();	
-	timestamp_reference=start;
+	last_timestamp=start;
 		
 	for(counter=0;!g_finish_program && counter<benchs;++counter)
 	{
-		packet.timestamp_us=timestamp_reference;
+		packet.timestamp_us=last_timestamp;
 		
 		if( (status=xv11lidar_read(laser, frames)) != XV11LIDAR_SUCCESS )
 		{
@@ -133,7 +133,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 			break;
 		}
 		// when read is finished, next read proceeds
-		timestamp_measured=TimestampUs(); 
+		last_timestamp=TimestampUs(); 
 		
 		packet.laser_angle=(frames[0].index-0xA0)*4;
 		
@@ -150,26 +150,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 		}
 		
 		packet.laser_speed=rpm/sane_frames;
-	
-		
-		timestamp_reference = timestamp_measured; //disable timestamp corrections until checked
-		/*	
-		timespan_computed = MICROSECONDS_PER_MINUTE * LASER_FRAMES_PER_READ * LASER_SPEED_FIXED_POINT_PRECISION / (LASER_FRAMES_PER_ROTATION * packet.laser_speed);
-		if(timestamp_measured - timespan_computed < timestamp_reference)
-		{ // new timestamp has better value, use it from now on
-			timestamp_reference = timestamp_measured;
-			packet.timestamp_us = timestamp_measured - timespan_computed;
-		}
-		else
-		{ // reference timetamp is better, correct measured timestamp from reference timestamp
-			timestamp_reference += timespan_computed;
-			correction = timestamp_measured - timestamp_reference;
-			if(correction > max_correction)
-				max_correction= correction;
-			total_correction += correction;
-		}
-		*/
- 
+	 
 		SendLaserPacket(socket_udp, address, packet);
 		
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
@@ -180,9 +161,7 @@ void MainLoop(int socket_udp, const struct sockaddr_in &address, struct xv11lida
 	double seconds_elapsed=(end-start)/ 1000000.0L;
 	
 	printf("ev3laser: avg loop %f seconds\n", seconds_elapsed/counter);
-	printf("ev3laser: last laser speed %f\n", packet.laser_speed/64.0);
-	printf("ev3laser: max timestamp correction %llu\n", max_correction);
-	printf("ev3laser: avg timestamp correction %llu\n", total_correction/counter);
+	printf("ev3laser: last laser rpm %f\n", packet.laser_speed/64.0);
 }
 
 
