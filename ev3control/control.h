@@ -14,6 +14,13 @@
 
 #pragma once
 
+/*
+ * Those constants can be tuned:
+ * https://github.com/bmegli/ev3dev-mapping/issues/28 for explanation
+*/
+const int MODULE_DISABLE_TRIES=5;
+const int MODULE_DISABLE_MS=100;
+
 #include <sys/types.h> //pid_t
 
 #include <string> //string
@@ -44,6 +51,7 @@ private:
 	std::map<std::string, Module> modules;
 	
 	std::vector<char *> PrepareExecvArgumentList(const std::string &module_call, std::string &out_argv_string);
+	bool DisableModuleWait(const std::string &name, Module *module);
 public:
 	Control();
 	~Control();
@@ -51,7 +59,7 @@ public:
 	bool ContainsModule(const std::string &name, Module *module);
 	void InsertModule(const std::string &name, int creation_delay_ms);
 	void EnableModule(const std::string &name, const std::string &call);
-	void DisableModule(const std::string &name);
+	bool DisableModule(const std::string &name);
 	std::list<std::string> DisableModules();
 
 	ModuleState CheckModuleState(const std::string &name);

@@ -297,9 +297,13 @@ bool ProcessMessageDISABLE(int client_socket, const char *payload, const control
 		return SendMessage(client_socket, response, response_length);
 	}
 	
-	control->DisableModule(unique_name);
+	if(!control->DisableModule(unique_name))
+	{
+		fprintf(stderr, "ev3control: unable to disable module: %s\n", unique_name.c_str());
+		return true;
+	}
+
 	printf("ev3control: disabled module: %s\n", unique_name.c_str());
-	
 	int response_length=EncodeModuleMessage(response, CONTROL_BUFFER_BYTES, DISABLED, unique_name);
 	return SendMessage(client_socket, response, response_length);
 }

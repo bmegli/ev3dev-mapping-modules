@@ -44,7 +44,7 @@ bool Control::ContainsModule(const std::string& name, Module* module)
 	map<std::string, Module>::iterator it=modules.find(name);
 	if(it == modules.end())
 		return false;
-	
+
 	*module=it->second;
 	return true;
 }
@@ -64,13 +64,13 @@ void Control::EnableModule(const std::string& name, const std::string& module_ca
 
 	if(module.state == MODULE_ENABLED)
 		Die("Control: request to enable module but module already enabled\n");
-	
+
 	int pipe_read_write[2];
 	if( pipe2(pipe_read_write, O_NONBLOCK) == -1 )
 		DieErrno("PrepareChild() pipe failed");
 
 	pid_t pid=fork();
-	
+
 	if(pid==-1)
 		DieErrno("Cotrol: EnableModule fork failed\n");
 	if(pid==0) //child
@@ -79,24 +79,24 @@ void Control::EnableModule(const std::string& name, const std::string& module_ca
 		if( dup2(pipe_read_write[0], STDIN_FILENO) == -1)
 			DieErrno("Control: EnableModule child dup2 failed\n");
 
-		//close the descriptors for older children		
-		
+		//close the descriptors for older children
+
 		map<string, Module>::iterator it;
-		
+
 		for(it=modules.begin();it!=modules.end();++it)
 			if(it->second.state == MODULE_ENABLED)
 				close(it->second.write_fd);
-	
+
 		string argv_str;
 		vector<char *> argv=PrepareExecvArgumentList(module_call, argv_str);
-	
+
 		if( execv(argv[0], &argv[0]) == -1 )
 			DieErrno("Control: EnableModule execv failed\n");
 	}
-	
+
 	// parent pid points to child
 	close(pipe_read_write[0]);
-	
+
 	module.state=MODULE_ENABLED;
 	module.pid=pid;
 	module.write_fd=pipe_read_write[1];
@@ -111,60 +111,97 @@ vector<char*> Control::PrepareExecvArgumentList(const string& module_call, strin
 	char *argv=(char*)out_argv_string.c_str();
 	vector<char *> result;
 	char *token=strtok(argv, " ");
-	
+
 	while(token!=NULL)
 	{
 		result.push_back(token);
 		token=strtok(NULL, " ");
 	}
-	
+
 	result.push_back(NULL);
-		
+
 	return result;
 }
 
 
-void Control::DisableModule(const std::string &name)
+bool Control::DisableModule(const std::string &name)
 {
 	Module module;
 
 	if( !ContainsModule(name, &module) )
 		Die("Control: request to disable module but no such module\n");
-	
+
 	if(module.state != MODULE_ENABLED)
 		Die("Control: request to disable module but module is not enabled\n");
-		
-	close(module.write_fd);
-		
-	int status;	
-		
-	pid_t pid=waitpid(module.pid, &status, 0);		
-	
-	if(pid == -1)
-		DieErrno("Control: DisableModule waitpid error for module\n");
-		
-	module.state=MODULE_DISABLED;
-	module.write_fd=0;
-	module.pid=0;
-	
-	modules[name]=module;
+
+	if(module.write_fd!=-1)
+	{
+		close(module.write_fd);
+		module.write_fd=-1;
+		modules[name]=module;
+	}
+
+	if(DisableModuleWait(name, &module))
+		return true;
+
+	fprintf(stderr, "Control: DisableModule terminating module %s with SIGINT\n", name.c_str());	
+
+	if(kill(module.pid, SIGINT) == -1)
+		DieErrno("Control: DisableModule kill SIGINT error\n");
+
+	if(DisableModuleWait(name, &module))
+		return true;
+
+	fprintf(stderr, "Control: DisableModule terminating module %s with SIGKILL\n", name.c_str());	
+
+	if(kill(module.pid, SIGKILL) == -1)
+		DieErrno("Control: DisableModule kill SIGKILL error\n");
+
+	if(DisableModuleWait(name, &module))
+		return true;
+
+	fprintf(stderr, "Control: DisableModule unable to terminate module %s with SIGKILL\n", name.c_str());	
+
+	return false;
+}
+
+bool Control::DisableModuleWait(const std::string &name, Module *module)
+{
+	int status;
+	pid_t pid;
+
+	for(int i=0;i<MODULE_DISABLE_TRIES;++i)
+	{
+		Sleep(MODULE_DISABLE_MS);
+		if( (pid=waitpid(module->pid, &status, WNOHANG)) == -1)
+			DieErrno("Control: DisableModule waitpid error");
+		if (pid == 0)
+			continue;
+
+		module->pid=0;
+		module->state=MODULE_DISABLED;
+		modules[name]=*module;
+
+		return true;
+	}
+	return false;
 }
 
 std::list<std::string> Control::DisableModules()
 {
 	map<string, Module>::iterator it;
 	list<std::string> disabled;
-	
+
 	for(it=modules.begin();it!=modules.end();++it)
 	{
 		Module module=it->second;
-		
+
 		if(module.state != MODULE_ENABLED)
 			continue;
 
-		DisableModule(it->first);
-		disabled.push_back(it->first);
-	}	
+		if(DisableModule(it->first))
+			disabled.push_back(it->first);
+	}
 	return disabled;
 }
 
@@ -173,15 +210,15 @@ ModuleState Control::CheckModuleState(const std::string& name)
 	map<std::string, Module>::iterator it=modules.find(name);
 	if( it == modules.end() )
 		Die("Control: request to check module state but module is not present\n");
-	
+
 	Module module=it->second;
 
 	// if not enabled just return state
 	if(module.state != MODULE_ENABLED )
 		return module.state;
-		
+
 	// otherwise check state and return it
-	
+
 	int status;
 	int ret=waitpid(module.pid, &status, WNOHANG );
 
@@ -206,18 +243,18 @@ ModuleState Control::CheckModuleState(const std::string& name)
 std::list<FailedModule> Control::CheckModulesStates()
 {
 	list<FailedModule> failed;
-	
+
 	int status, ret;
-	
+
 	map<string, Module>::iterator it;
-		
+
 	for(it=modules.begin();it!=modules.end();++it)
 	{
 		Module module=it->second;
-		
+
 		if(module.state != MODULE_ENABLED)
 			continue;
-			
+
 		ret=waitpid(module.pid, &status, WNOHANG );
 
 		if(ret == 0) //still running
@@ -232,11 +269,11 @@ std::list<FailedModule> Control::CheckModulesStates()
 			module.pid=0;
 			module.return_value = ModuleReturnValue(status);
 			modules[it->first]=module;
-			
+
 			FailedModule fail={it->first, module.return_value};
-			
+
 			failed.push_back(fail);
 		}
-	}	
+	}
 	return failed;
 }
