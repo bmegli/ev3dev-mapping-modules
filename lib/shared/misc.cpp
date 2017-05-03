@@ -14,7 +14,7 @@ uint64_t TimestampUs()
 	if( clock_gettime(CLOCK_MONOTONIC, &ts) )
 		DieErrno("Timestamp failed");
 	
-	return ts.tv_sec*1000000 + ts.tv_nsec / 1000;
+	return (uint64_t)ts.tv_sec*1000000 + (uint64_t)ts.tv_nsec / 1000;
 }
 
 void Sleep(int ms)
