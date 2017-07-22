@@ -5,6 +5,8 @@ For high-level project overview visit [ev3dev-mapping web page](http://www.ev3de
 
 For project meta-repository visit [ev3dev-mapping](https://github.com/bmegli/ev3dev-mapping)
 
+![Alt text](https://user-images.githubusercontent.com/9095769/28492434-20d8cfa8-6f04-11e7-8f9e-4415bc809063.png "ev3dev-mapping-modules screenshot")
+
 To do - add information on hardware requirements
 
 ## Building Instructions
