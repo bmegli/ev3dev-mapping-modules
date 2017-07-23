@@ -94,6 +94,18 @@ Those scripts help with things like loading the drivers, setting port modes and 
 The scripts are very simple and intended for *one shot* running after each boot.
 If called multiple times they will not work.
 
+### Running
+
+ev3dev-mapping-modules is usually started by calling init script followed by `ev3control`.
+
+Example:
+
+``` bash
+cd ev3dev-mapping-modules/bin
+sudo ./ev3init.sh     #load the CruizCore driver, prepare laser ports, warm up lasers
+./ev3control 8004 500 #make ev3control listen on TCP/IP port 8004 with 500 ms keepalive 
+```
+
 ### Security
 
 Note that ev3control is insecure at this stage so you should only use it in trusted networks (e.g. private) and as non-root user.
