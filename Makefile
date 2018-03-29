@@ -1,4 +1,4 @@
-DIRS = ev3drive ev3odometry ev3laser ev3control ev3dead-reconning ev3wifi
+DIRS = ev3drive ev3odometry ev3laser ev3control ev3dead-reconning ev3wifi ccdrive
 OUTPUT_DIR = bin
 
 all: $(DIRS) ev3init TestingTheLIDAR TestingTheDriveWithDeadReconning
@@ -20,6 +20,7 @@ clean:
 	$(MAKE) -C ev3control clean
 	$(MAKE) -C ev3dead-reconning clean
 	$(MAKE) -C ev3wifi clean
+	$(MAKE) -C ccdrive clean
 	rm -f $(addprefix $(OUTPUT_DIR)/, $(DIRS) ev3init.sh TestingTheLIDAR.sh TestingTheDriveWithDeadReconning.sh)	
 		
 .PHONY: clean $(DIRS)
