@@ -10,10 +10,10 @@ CXX = g++
 DEBUG = 
 CFLAGS = -O2 -Wall -DEV3 -c  -I $(INCLUDE)
 CXX_FLAGS = -O2 -std=c++11 -Wall -DEV3 -D_GLIBCXX_USE_NANOSLEEP -c $(DEBUG) -I $(INCLUDE)
-LFLAGS = -Wall -lmnl $(DEBUG)
+LDLIBS = -lmnl
 
 $(TARGET) : $(OBJS)
-	$(CXX) $(LFLAGS) $(OBJS) -o $(TARGET)
+	$(CXX) $(OBJS) $(LDLIBS) -o $(TARGET)
 
 main.o : main.cpp $(WIFI_SCAN)/wifi_scan.h $(SHARED)/misc.h $(SHARED)/net_udp.h 
 	$(CXX) $(CXX_FLAGS) main.cpp
