@@ -7,3 +7,6 @@
 [submodule "lib/wifi-scan"]
 	path = lib/wifi-scan
 	url = https://github.com/bmegli/wifi-scan.git
+[submodule "lib/roboclaw"]
+	path = lib/roboclaw
+	url = https://github.com/bmegli/roboclaw.git
