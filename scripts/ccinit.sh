@@ -10,5 +10,5 @@ config-pin p9.13 uart
 
 echo 'configuring PWM chip 3'
 config-pin p9.14 pwm
-
+echo 0 > /sys/class/pwm/pwmchip3/export
 
