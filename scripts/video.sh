@@ -15,6 +15,7 @@ echo video: device=$1 width=$2 height=$3 bitrate=$4 host=$5 port=$6
 
 echo video: forcing Logitech C920 to capture at 30 FPS
 v4l2-ctl --set-ctrl=exposure_auto_priority=0
+v4l2-ctl --set-parm=30
 
 echo video: starting gstreamer
 exec gst-launch-1.0 uvch264src initial-bitrate=$4 average-bitrate=$4 iframe-period=4000 device=$1 name=src auto-start=true src.vidsrc ! video/x-h264,width=$2,height=$3,framerate=30/1 ! h264parse ! rtph264pay ! udpsink host=$5 port=$6
