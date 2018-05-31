@@ -15,20 +15,24 @@
  /*   
   * 
   * ccdrive: TODO
-  * -initializes 
-  * -reads UDP messages
-  * -sets motor speeds accordingly
-  * -or sets motor positions and speeds accordingly
+  * -initializes 3 x roboclaw MC and vmu931 IMU
+  * -reads UDP messages with motor settings
+  * -sets motor speeds/positions accordingly
   * -stops motors on timeout
+  * -reads motors' encoder positions
+  * -reads IMU data
+  * -sends motor encoders and IMU data in UDP messages
   *
   * See Usage() function for syntax details (or run the program without arguments)
   */
 
+#include "roboclaw/roboclaw.h"
+#include "vmu931/vmu931.h"
 
 #include "shared/misc.h"
 #include "shared/net_udp.h"
 
-#include "roboclaw/roboclaw.h"
+#include <sys/select.h> //select
 
 #include <signal.h> //sigaction, sig_atomic_t
 #include <endian.h> //htobe16, htobe32, htobe64
@@ -60,12 +64,15 @@ struct drive_packet
 const int CONTROL_PACKET_BYTES = 18; //8 + 5*2 = 18 bytes
 enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
 
-void MainLoop(int socket_udp, roboclaw *rc);
+void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu);
 void ProcessMessage(const drive_packet &packet, roboclaw *rc);
 
-roboclaw *InitMotors(const char *tty, int baudrate);
+struct roboclaw *InitMotors(const char *tty, int baudrate);
 void CloseMotors(roboclaw *rc);
 void StopMotors(roboclaw *rc);
+
+struct vmu *InitIMU(const char *tty);
+void CloseIMU(struct vmu *vmu931);
 
 int RecvDrivePacket(int socket_udp, drive_packet *packet);
 void DecodeDrivePacket(drive_packet *packet, const char *data);
@@ -80,24 +87,36 @@ int main(int argc, char **argv)
 	int socket_udp, port, timeout_ms;
 	sockaddr_in destination_udp;
 
-	roboclaw *rc;
+	struct roboclaw *rc;
+	struct vmu *vmu;
 	
 	ProcessArguments(argc, argv, &port, &timeout_ms);
+	const char *roboclaw_tty=argv[1];
+	const char *vmu931_tty=argv[2];
+
 	SetStandardInputNonBlocking();
-	
+
 	//init
 	RegisterSignals(Finish);
 
-	rc=InitMotors("/dev/ttyO1", 460800); //TO DO hardcoded params
-		
+	rc=InitMotors(roboclaw_tty, 460800); //TO DO hardcoded baudrate
+	vmu=InitIMU(vmu931_tty);
+	
+	if(rc==NULL || vmu== NULL)
+	{
+		CloseMotors(rc), CloseIMU(vmu);
+		return 1;
+	}
+			
 	InitNetworkUDP(&socket_udp, &destination_udp, NULL, port, timeout_ms);
 
 	//work
-	MainLoop(socket_udp, rc);
+	MainLoop(socket_udp, rc, vmu);
 	
 	//cleanup
 	StopMotors(rc);
 	CloseMotors(rc);
+	CloseIMU(vmu);
 	CloseNetworkUDP(socket_udp);
 		
 	printf("ccdrive: bye\n");
@@ -105,26 +124,55 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void MainLoop(int socket_udp, roboclaw *rc)
+void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 {
-	int status;
+	int status;	
+	fd_set rfds;
+	struct timeval tv;
+
 	drive_packet packet;
-	
+	uint64_t last_drive_packet_timestamp_us=TimestampUs();
+
+	tv.tv_sec=0;
+	tv.tv_usec=1000*10; //10 ms hardcoded 
+	uint64_t TIMEOUT_US=500*1000;
+		
 	while(!g_finish_program)
 	{
-		status=RecvDrivePacket(socket_udp, &packet);
-		if(status < 0)
+		FD_ZERO(&rfds);
+		FD_SET(socket_udp, &rfds);
+
+		status=select(socket_udp+1, &rfds, NULL, NULL, &tv);
+		if(status == -1)
+		{
+			perror("ccdrive: select failed");
 			break;
-		if(status == 0) //timeout
+		}
+		else if(status) //got something on udp socket
+		{
+			status=RecvDrivePacket(socket_udp, &packet);
+			if(status < 0)
+				break;
+			if(status == 0) //timeout but this should not happen, we are after select
+			{
+				StopMotors(rc);
+				fprintf(stderr, "ccdrive: waiting for drive controller...\n");
+			}
+			else
+			{
+				ProcessMessage(packet, rc);
+				last_drive_packet_timestamp_us=TimestampUs();
+			}
+		}
+		
+		if(TimestampUs() - last_drive_packet_timestamp_us > TIMEOUT_US)
 		{
 			StopMotors(rc);
-			fprintf(stderr, "ccdrive: waiting for drive controller...\n");
+			fprintf(stderr, "ccdrive: timeout...\n");		
 		}
-		else
-			ProcessMessage(packet, rc);
-
+		
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
-			break;
+			break;		
 	}
 }
 
@@ -165,7 +213,7 @@ void ProcessMessage(const drive_packet &packet, roboclaw *rc)
 	}
 }
 
-roboclaw *InitMotors(const char *tty, int baudrate)
+struct roboclaw *InitMotors(const char *tty, int baudrate)
 {
 	roboclaw *rc;
 	int16_t voltage;
@@ -174,7 +222,10 @@ roboclaw *InitMotors(const char *tty, int baudrate)
 	rc=roboclaw_init(tty, baudrate);
 	
 	if(!rc)
-		DieErrno("ccdrive: unable to initialize motors");
+	{
+		perror("ccdrive: unable to initialize motors");
+		return NULL;
+	}
 	
 	ok &= roboclaw_main_battery_voltage(rc, FRONT_MOTOR_ADDRESS, &voltage) == ROBOCLAW_OK;
 	ok &= roboclaw_main_battery_voltage(rc, MIDDLE_MOTOR_ADDRESS, &voltage) == ROBOCLAW_OK;
@@ -183,7 +234,8 @@ roboclaw *InitMotors(const char *tty, int baudrate)
 	if(!ok)
 	{
 		CloseMotors(rc); //TO DO add more informative message
-		Die("ccdrive: unable to communicate with motors");
+		fprintf(stderr, "ccdrive: unable to communicate with motors");
+		return NULL;
 	}
 	
 	printf("ccdrive: battery voltage is %d.%d\n", voltage/10, voltage % 10);
@@ -204,6 +256,36 @@ void StopMotors(roboclaw *rc)
 
 	if(!ok)
 		fprintf(stderr, "ccdrive: unable to stop motors\n");
+}
+
+struct vmu *InitIMU(const char *tty)
+{
+	struct vmu *vmu;
+	
+	if( (vmu=vmu_init(tty)) == NULL)
+	{
+		perror(	"ccdrive: unable to initialize VMU931\n\n"
+				"hints:\n"
+				"- it takes a few seconds after plugging in to initialize device\n"
+				"- make sure you are using correct tty device (dmesg after plugging vmu)\n"
+				"- if all else fails unplug/plug VMU931\n\n"
+				"error details");
+		return NULL;
+	} 
+	
+	if( vmu_stream(vmu, VMU_STREAM_EULER) == VMU_ERROR )
+	{
+		perror("failed to stream euler data");
+		vmu_close(vmu);
+		return NULL;
+	}
+	
+	return vmu;
+}
+
+void CloseIMU(struct vmu *vmu931)
+{
+	vmu_close(vmu931);
 }
 
 
@@ -242,13 +324,13 @@ void DecodeDrivePacket(drive_packet *packet, const char *data)
 
 void Usage()
 {
-	printf("ccdrive udp_port timeout_ms\n\n");
+	printf("ccdrive roboclaw_tty vmu_tty udp_port timeout_ms\n\n");
 	printf("examples:\n");
-	printf("./ccdrive 8003 500\n");
+	printf("./ccdrive /dev/ttyO1 /dev/ttyACM0 8003 500\n");
 }
 void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
 {
-	if(argc!=3)
+	if(argc!=5)
 	{
 		Usage();
 		exit(EXIT_SUCCESS);		
@@ -256,7 +338,7 @@ void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
 	
 	long temp;
 	
-	temp=strtol(argv[1], NULL, 0);
+	temp=strtol(argv[3], NULL, 0);
 	
 	if(temp <= 0 || temp > 65535)
 	{
@@ -265,7 +347,7 @@ void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
 	}
 
 	*port=temp;
-	temp=strtol(argv[2], NULL, 0);
+	temp=strtol(argv[4], NULL, 0);
 	if(temp <= 0 || temp > 10000)
 	{
 		fprintf(stderr, "ccdrive: the argument timeout_ms has to be in range <1, 10000>\n");
