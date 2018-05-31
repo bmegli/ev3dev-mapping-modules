@@ -10,3 +10,6 @@
 [submodule "lib/roboclaw"]
 	path = lib/roboclaw
 	url = https://github.com/bmegli/roboclaw.git
+[submodule "lib/vmu931"]
+	path = lib/vmu931
+	url = https://github.com/bmegli/vmu931.git
