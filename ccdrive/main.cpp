@@ -110,8 +110,8 @@ int main(int argc, char **argv)
 	
 	ProcessArguments(argc, argv,&server_port, &port, &timeout_ms);
 	const char *roboclaw_tty=argv[1];
-	const char *vmu931_tty=argv[2];
-	const char *host=argv[3];
+	const char *vmu931_tty=argv[3];
+	const char *host=argv[4];
 
 	SetStandardInputNonBlocking();
 
