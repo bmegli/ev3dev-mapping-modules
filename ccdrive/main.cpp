@@ -61,11 +61,24 @@ struct drive_packet
 	int16_t param4;	
 };
 
+struct dead_reconning_packet
+{
+	uint64_t timestamp_us;
+	int32_t position_left;
+	int32_t position_right;
+	float x;
+	float y;
+	float z;
+};
+
+
 const int CONTROL_PACKET_BYTES = 18; //8 + 5*2 = 18 bytes
 enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
 
 void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu);
 void ProcessMessage(const drive_packet &packet, roboclaw *rc);
+int GetEncoders(roboclaw *rc, dead_reconning_packet *packet);
+int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet);
 
 struct roboclaw *InitMotors(const char *tty, int baudrate);
 void CloseMotors(roboclaw *rc);
@@ -130,7 +143,8 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 	fd_set rfds;
 	struct timeval tv;
 
-	drive_packet packet;
+	struct dead_reconning_packet odometry_packet;
+	struct drive_packet drive_packet;
 	uint64_t last_drive_packet_timestamp_us=TimestampUs();
 
 	tv.tv_sec=0;
@@ -150,7 +164,7 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 		}
 		else if(status) //got something on udp socket
 		{
-			status=RecvDrivePacket(socket_udp, &packet);
+			status=RecvDrivePacket(socket_udp, &drive_packet);
 			if(status < 0)
 				break;
 			if(status == 0) //timeout but this should not happen, we are after select
@@ -160,17 +174,30 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 			}
 			else
 			{
-				ProcessMessage(packet, rc);
+				ProcessMessage(drive_packet, rc);
 				last_drive_packet_timestamp_us=TimestampUs();
 			}
 		}
 		
+		//check timeout
 		if(TimestampUs() - last_drive_packet_timestamp_us > TIMEOUT_US)
 		{
 			StopMotors(rc);
 			fprintf(stderr, "ccdrive: timeout...\n");		
 		}
 		
+		//fill the dead reconning data (encoders and euler angles)
+		
+		if(GetEncoders(rc, &odometry_packet) == -1)
+			break;
+		
+		odometry_packet.timestamp_us = TimestampUs();
+
+		if(GetEulerAngles(vmu, &odometry_packet) == -1)
+			break;
+
+		printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
+			
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;		
 	}
@@ -213,6 +240,49 @@ void ProcessMessage(const drive_packet &packet, roboclaw *rc)
 	}
 }
 
+int GetEncoders(roboclaw *rc, dead_reconning_packet *packet)
+{
+	int status;
+	status=roboclaw_encoders(rc, MIDDLE_MOTOR_ADDRESS, &packet->position_left, &packet->position_right);
+
+	if(status == ROBOCLAW_OK)
+		return 0;
+
+	if(status == ROBOCLAW_ERROR)
+		perror("ccdrive: unable to read encoders\n");
+	if(status == ROBOCLAW_RETRIES_EXCEEDED)
+		fprintf(stderr, "ccdrive: retries exceeded while reading encoders\n");
+	return -1;
+}
+
+int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet)
+{
+	static vmu_txyz euler_data[10];
+	int status;
+	
+	while( (status=vmu_euler(vmu, euler_data, 10)) > 10 )
+		; //burn through old readings to get the lastest
+	
+	if(status == VMU_ERROR)
+	{
+		perror("ccdrive: failed to read imu data\n");
+		return -1;
+	}
+	if(status == 0) //this should not happen
+	{
+		fprintf(stderr, "ccdrive: status 0 WTF?");
+		return -1;
+	}	
+	
+	//the last reading is the latest
+	--status; 
+	packet->x = euler_data[status].x;
+	packet->y = euler_data[status].y;
+	packet->z = euler_data[status].z;
+	
+	return 0;
+}
+
 struct roboclaw *InitMotors(const char *tty, int baudrate)
 {
 	roboclaw *rc;
@@ -223,7 +293,7 @@ struct roboclaw *InitMotors(const char *tty, int baudrate)
 	
 	if(!rc)
 	{
-		perror("ccdrive: unable to initialize motors");
+		perror("ccdrive: unable to initialize motors\n");
 		return NULL;
 	}
 	
@@ -234,7 +304,7 @@ struct roboclaw *InitMotors(const char *tty, int baudrate)
 	if(!ok)
 	{
 		CloseMotors(rc); //TO DO add more informative message
-		fprintf(stderr, "ccdrive: unable to communicate with motors");
+		fprintf(stderr, "ccdrive: unable to communicate with motors\n");
 		return NULL;
 	}
 	
@@ -275,7 +345,7 @@ struct vmu *InitIMU(const char *tty)
 	
 	if( vmu_stream(vmu, VMU_STREAM_EULER) == VMU_ERROR )
 	{
-		perror("failed to stream euler data");
+		perror("ccdrive: vmu failed to stream euler data\n");
 		vmu_close(vmu);
 		return NULL;
 	}
