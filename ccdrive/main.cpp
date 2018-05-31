@@ -34,6 +34,7 @@
 
 #include <sys/select.h> //select
 
+#include <string.h> //memcpy
 #include <signal.h> //sigaction, sig_atomic_t
 #include <endian.h> //htobe16, htobe32, htobe64
 #include <stdio.h> //printf, etc
@@ -71,11 +72,12 @@ struct dead_reconning_packet
 	float z;
 };
 
+const int DEAD_RECONNING_PACKET_BYTES=28; //8 + 2*4 + 3*4
 
 const int CONTROL_PACKET_BYTES = 18; //8 + 5*2 = 18 bytes
 enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
 
-void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu);
+void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp, roboclaw *rc, vmu *vmu);
 void ProcessMessage(const drive_packet &packet, roboclaw *rc);
 int GetEncoders(roboclaw *rc, dead_reconning_packet *packet);
 int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet);
@@ -90,22 +92,26 @@ void CloseIMU(struct vmu *vmu931);
 int RecvDrivePacket(int socket_udp, drive_packet *packet);
 void DecodeDrivePacket(drive_packet *packet, const char *data);
 
+int EncodeDeadReconningPacket(const dead_reconning_packet &packet, char *buffer);
+void SendDeadReconningPacketUDP(int socket, const sockaddr_in &dest, const dead_reconning_packet &frame);
+
 void Usage();
-void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms);
+void ProcessArguments(int argc, char **argv,int *server_port, int *port, int *timeout_ms);
 void Finish(int signal);
 
 
 int main(int argc, char **argv)
 {			
-	int socket_udp, port, timeout_ms;
+	int server_udp, client_udp, server_port, port, timeout_ms;
 	sockaddr_in destination_udp;
 
 	struct roboclaw *rc;
 	struct vmu *vmu;
 	
-	ProcessArguments(argc, argv, &port, &timeout_ms);
+	ProcessArguments(argc, argv,&server_port, &port, &timeout_ms);
 	const char *roboclaw_tty=argv[1];
 	const char *vmu931_tty=argv[2];
+	const char *host=argv[3];
 
 	SetStandardInputNonBlocking();
 
@@ -121,23 +127,25 @@ int main(int argc, char **argv)
 		return 1;
 	}
 			
-	InitNetworkUDP(&socket_udp, &destination_udp, NULL, port, timeout_ms);
+	InitNetworkUDP(&server_udp, NULL, NULL, server_port, timeout_ms); //to do - no timeout needed here, we timeout on select
+	InitNetworkUDP(&client_udp, &destination_udp, host, port, 0);
 
 	//work
-	MainLoop(socket_udp, rc, vmu);
+	MainLoop(server_udp, client_udp, destination_udp, rc, vmu);
 	
 	//cleanup
 	StopMotors(rc);
 	CloseMotors(rc);
 	CloseIMU(vmu);
-	CloseNetworkUDP(socket_udp);
+	CloseNetworkUDP(client_udp);
+	CloseNetworkUDP(server_udp);
 		
 	printf("ccdrive: bye\n");
 		
 	return 0;
 }
 
-void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
+void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp, roboclaw *rc, vmu *vmu)
 {
 	int status;	
 	fd_set rfds;
@@ -154,9 +162,9 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 	while(!g_finish_program)
 	{
 		FD_ZERO(&rfds);
-		FD_SET(socket_udp, &rfds);
+		FD_SET(server_udp, &rfds);
 
-		status=select(socket_udp+1, &rfds, NULL, NULL, &tv);
+		status=select(server_udp+1, &rfds, NULL, NULL, &tv);
 		if(status == -1)
 		{
 			perror("ccdrive: select failed");
@@ -164,7 +172,7 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 		}
 		else if(status) //got something on udp socket
 		{
-			status=RecvDrivePacket(socket_udp, &drive_packet);
+			status=RecvDrivePacket(server_udp, &drive_packet);
 			if(status < 0)
 				break;
 			if(status == 0) //timeout but this should not happen, we are after select
@@ -196,7 +204,8 @@ void MainLoop(int socket_udp, roboclaw *rc, vmu *vmu)
 		if(GetEulerAngles(vmu, &odometry_packet) == -1)
 			break;
 
-		printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
+		SendDeadReconningPacketUDP(client_udp, destination_udp, odometry_packet);
+		//printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
 			
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
 			break;		
@@ -392,15 +401,56 @@ void DecodeDrivePacket(drive_packet *packet, const char *data)
 	packet->param4=be16toh(*((int16_t*)(data+16)));
 }
 
+int encode_float(float f, char *buffer)
+{
+	uint32_t t32;
+	memcpy(&t32, &f, sizeof(float));
+	t32=htobe32(t32);
+	memcpy(buffer, &t32, sizeof(float));
+	return sizeof(float);
+}
+int encode_int32(int32_t i, char *buffer)
+{
+	uint32_t t32=htobe32(i);
+	memcpy(buffer, &t32, sizeof(int32_t));
+	return sizeof(int32_t);
+}
+
+int EncodeDeadReconningPacket(const dead_reconning_packet &p, char *buffer)
+{
+	uint64_t temp64;
+	size_t offset=0;
+	
+	temp64=htobe64(p.timestamp_us);
+	memcpy(buffer, &temp64, sizeof(uint64_t));
+	offset+=sizeof(uint64_t);
+
+	offset+=encode_int32(p.position_left, buffer+offset);
+	offset+=encode_int32(p.position_right, buffer+offset);
+
+	offset += encode_float(p.x, buffer+offset);
+	offset += encode_float(p.y, buffer+offset);
+	offset += encode_float(p.z, buffer+offset);	
+	
+	return DEAD_RECONNING_PACKET_BYTES;	
+	
+}
+void SendDeadReconningPacketUDP(int socket, const sockaddr_in &dest, const dead_reconning_packet &frame)
+{
+	static char buffer[DEAD_RECONNING_PACKET_BYTES];
+	EncodeDeadReconningPacket(frame, buffer);
+	SendToUDP(socket, dest, buffer, DEAD_RECONNING_PACKET_BYTES);
+}
+
 void Usage()
 {
-	printf("ccdrive roboclaw_tty vmu_tty udp_port timeout_ms\n\n");
+	printf("ccdrive roboclaw_tty server_port vmu_tty host port timeout_ms\n\n");
 	printf("examples:\n");
-	printf("./ccdrive /dev/ttyO1 /dev/ttyACM0 8003 500\n");
+	printf("./ccdrive /dev/ttyO1 8003 /dev/ttyACM0 192.168.1.80 8013 500\n");
 }
-void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
+void ProcessArguments(int argc, char **argv,int *server_port, int *port, int *timeout_ms)
 {
-	if(argc!=5)
+	if(argc!=7)
 	{
 		Usage();
 		exit(EXIT_SUCCESS);		
@@ -408,16 +458,27 @@ void ProcessArguments(int argc, char **argv, int *port, int *timeout_ms)
 	
 	long temp;
 	
-	temp=strtol(argv[3], NULL, 0);
+	temp=strtol(argv[2], NULL, 0);
 	
 	if(temp <= 0 || temp > 65535)
 	{
-		fprintf(stderr, "ccdrive: the argument port has to be in range <1, 65535>\n");
+		fprintf(stderr, "ccdrive: the argument server_port has to be in range <1, 65535>\n");
 		exit(EXIT_SUCCESS);
 	}
 
-	*port=temp;
-	temp=strtol(argv[4], NULL, 0);
+	*server_port=temp;
+
+	temp=strtol(argv[5], NULL, 0);
+	
+	if(temp <= 0 || temp > 65535)
+	{
+		fprintf(stderr, "ccdrive: the argument server_port has to be in range <1, 65535>\n");
+		exit(EXIT_SUCCESS);
+	}
+
+	*port=temp;	
+	
+	temp=strtol(argv[6], NULL, 0);
 	if(temp <= 0 || temp > 10000)
 	{
 		fprintf(stderr, "ccdrive: the argument timeout_ms has to be in range <1, 10000>\n");
