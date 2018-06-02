@@ -159,14 +159,14 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 	struct drive_packet drive_packet;
 	uint64_t last_drive_packet_timestamp_us=TimestampUs();
 
-	tv.tv_sec=0;
-	tv.tv_usec=1000*10; //10 ms hardcoded 
 	uint64_t TIMEOUT_US=500*1000;
 		
 	while(!g_finish_program)
 	{
 		FD_ZERO(&rfds);
 		FD_SET(server_udp, &rfds);
+		tv.tv_sec=0;
+		tv.tv_usec=1000*10; //10 ms hardcoded 
 
 		status=select(server_udp+1, &rfds, NULL, NULL, &tv);
 		if(status == -1)
@@ -195,6 +195,7 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 		if(TimestampUs() - last_drive_packet_timestamp_us > TIMEOUT_US)
 		{
 			StopMotors(rc);
+			last_drive_packet_timestamp_us=TimestampUs(); //mark timestamp not to flood with messages
 			fprintf(stderr, "ccdrive: timeout...\n");		
 		}
 		
