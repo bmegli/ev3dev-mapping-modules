@@ -67,13 +67,14 @@ struct dead_reconning_packet
 	uint64_t timestamp_us;
 	int32_t position_left;
 	int32_t position_right;
-	//euler angles as in Unity coordinate system
+	//quaternion as in Unity coordinate system
+	float w;
 	float x;
 	float y;
 	float z;
 };
 
-const int DEAD_RECONNING_PACKET_BYTES=28; //8 + 2*4 + 3*4
+const int DEAD_RECONNING_PACKET_BYTES=32; //8 + 2*4 + 4*4
 
 const int CONTROL_PACKET_BYTES = 18; //8 + 5*2 = 18 bytes
 enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
@@ -82,6 +83,8 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 void ProcessMessage(const drive_packet &packet, roboclaw *rc);
 int GetEncoders(roboclaw *rc, dead_reconning_packet *packet);
 int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet);
+int GetQuaternion(vmu *vmu, dead_reconning_packet *packet);
+
 
 struct roboclaw *InitMotors(const char *tty, int baudrate);
 void CloseMotors(roboclaw *rc);
@@ -202,8 +205,8 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 		
 		odometry_packet.timestamp_us = TimestampUs();
 
-		if(GetEulerAngles(vmu, &odometry_packet) == -1)
-			break;
+		if(GetQuaternion(vmu, &odometry_packet) == -1)
+			break; //consider if it is possible to not get data
 
 		SendDeadReconningPacketUDP(client_udp, destination_udp, odometry_packet);
 		//printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
@@ -295,6 +298,38 @@ int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet)
 	return 0;
 }
 
+int GetQuaternion(vmu *vmu, dead_reconning_packet *packet)
+{
+	static vmu_twxyz quat_data[10];
+	int status;
+	
+	while( (status=vmu_quat(vmu, quat_data, 10)) > 10 )
+		; //burn through old readings to get the lastest
+	
+	if(status == VMU_ERROR)
+	{
+		perror("ccdrive: failed to read imu data\n");
+		return -1;
+	}
+	if(status == 0) //this should not happen
+	{
+		fprintf(stderr, "ccdrive: status 0 WTF?");
+		return -1;
+	}	
+
+	//the last reading is the latest
+	--status; 
+
+	//quaterion as in Unity coordinate system
+	packet->w = quat_data[status].w;
+	packet->x = quat_data[status].x;
+	packet->y = -quat_data[status].z;
+	packet->z = quat_data[status].y;
+	
+	return 0;
+}
+
+
 struct roboclaw *InitMotors(const char *tty, int baudrate)
 {
 	roboclaw *rc;
@@ -355,9 +390,9 @@ struct vmu *InitIMU(const char *tty)
 		return NULL;
 	} 
 	
-	if( vmu_stream(vmu, VMU_STREAM_EULER) == VMU_ERROR )
+	if( vmu_stream(vmu, VMU_STREAM_QUAT) == VMU_ERROR )
 	{
-		perror("ccdrive: vmu failed to stream euler data\n");
+		perror("ccdrive: vmu failed to stream quaternion data\n");
 		vmu_close(vmu);
 		return NULL;
 	}
@@ -431,6 +466,7 @@ int EncodeDeadReconningPacket(const dead_reconning_packet &p, char *buffer)
 	offset+=encode_int32(p.position_left, buffer+offset);
 	offset+=encode_int32(p.position_right, buffer+offset);
 
+	offset += encode_float(p.w, buffer+offset);
 	offset += encode_float(p.x, buffer+offset);
 	offset += encode_float(p.y, buffer+offset);
 	offset += encode_float(p.z, buffer+offset);	
