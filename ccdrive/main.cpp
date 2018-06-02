@@ -289,7 +289,7 @@ int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet)
 
 	//euler angles as in Unity coordinate system
 	packet->x = euler_data[status].x;
-	packet->y = euler_data[status].z;
+	packet->y = -euler_data[status].z;
 	packet->z = euler_data[status].y;
 	
 	return 0;
