@@ -165,8 +165,10 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 	{
 		FD_ZERO(&rfds);
 		FD_SET(server_udp, &rfds);
+		FD_SET(vmu_fd(vmu), &rfds);
+
 		tv.tv_sec=0;
-		tv.tv_usec=1000*10; //10 ms hardcoded 
+		tv.tv_usec=1000*50; //50 ms hardcoded
 
 		status=select(server_udp+1, &rfds, NULL, NULL, &tv);
 		if(status == -1)
@@ -176,16 +178,24 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 		}
 		else if(status) //got something on udp socket
 		{
-			status=RecvDrivePacket(server_udp, &drive_packet);
-			if(status < 0)
-				break;
-			if(status == 0) //timeout but this should not happen, we are after select
+			if( FD_ISSET(vmu_fd(vmu), &rfds) )
 			{
-				StopMotors(rc);
-				fprintf(stderr, "ccdrive: waiting for drive controller...\n");
+				odometry_packet.timestamp_us = TimestampUs();
+				if(GetQuaternion(vmu, &odometry_packet) == -1)
+					break; //consider if it is possible to not get data
+				if(GetEncoders(rc, &odometry_packet) == -1)
+					break;
 			}
-			else
+			if( FD_ISSET(server_udp, &rfds) )
 			{
+				if( (status=RecvDrivePacket(server_udp, &drive_packet)) < 0 )
+					break;
+				if(status == 0)
+				{
+					StopMotors(rc);
+					fprintf(stderr, "ccdrive: timeout reading from server, this should not happen!...\n");
+				}
+
 				ProcessMessage(drive_packet, rc);
 				last_drive_packet_timestamp_us=TimestampUs();
 			}
@@ -199,17 +209,8 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 			fprintf(stderr, "ccdrive: timeout...\n");		
 		}
 		
-		//fill the dead reconning data (encoders and euler angles)
-		
-		if(GetEncoders(rc, &odometry_packet) == -1)
-			break;
-		
-		odometry_packet.timestamp_us = TimestampUs();
-
-		if(GetQuaternion(vmu, &odometry_packet) == -1)
-			break; //consider if it is possible to not get data
-
-		SendDeadReconningPacketUDP(client_udp, destination_udp, odometry_packet);
+		if( FD_ISSET(vmu_fd(vmu), &rfds) )
+			SendDeadReconningPacketUDP(client_udp, destination_udp, odometry_packet);
 		//printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
 			
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
