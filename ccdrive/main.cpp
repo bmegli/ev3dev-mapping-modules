@@ -40,7 +40,7 @@
 #include <stdio.h> //printf, etc
 #include <stdlib.h> //exit
 #include <errno.h> //errno
-
+#include <limits.h> //INT_MAX
 
 // constants
 const uint8_t FRONT_MOTOR_ADDRESS=0x80;
@@ -218,7 +218,9 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 }
 
 void ProcessMessage(const drive_packet &packet, roboclaw *rc)
-{	
+{
+	static int last_left=INT_MAX, last_right=INT_MAX;
+	
 	if(packet.command == KEEPALIVE)
 		return;
 		
@@ -227,11 +229,16 @@ void ProcessMessage(const drive_packet &packet, roboclaw *rc)
 		int16_t l=packet.param1, r=packet.param2;
 		bool ok=true;
 
+		if(l==last_left && r==last_right)
+			return;
+
 		ok &= roboclaw_speed_accel_m1m2(rc, FRONT_MOTOR_ADDRESS, r, l, MOTOR_ACCELERATION) == ROBOCLAW_OK;
 		ok &= roboclaw_speed_accel_m1m2(rc, MIDDLE_MOTOR_ADDRESS, r, l,  MOTOR_ACCELERATION) == ROBOCLAW_OK;
 		ok &= roboclaw_speed_accel_m1m2(rc, REAR_MOTOR_ADDRESS, r, l, MOTOR_ACCELERATION) == ROBOCLAW_OK;	
 
-		if(!ok)
+		if(ok)
+			last_left=l, last_right=r;
+		else
 			fprintf(stderr, "ccdrive: failed to set motor speed, no reaction implemented\n");
 	}
 	else if(packet.command == TO_POSITION_WITH_SPEED)
