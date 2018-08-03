@@ -67,6 +67,7 @@ struct dead_reconning_packet
 	uint64_t timestamp_us;
 	int32_t position_left;
 	int32_t position_right;
+	int16_t battery_voltage; //temp in 10*Volts
 	//quaternion as in Unity coordinate system
 	float w;
 	float x;
@@ -74,7 +75,7 @@ struct dead_reconning_packet
 	float z;
 };
 
-const int DEAD_RECONNING_PACKET_BYTES=32; //8 + 2*4 + 4*4
+const int DEAD_RECONNING_PACKET_BYTES=34; //8 + 2*4 + 2 + 4*4
 
 const int CONTROL_PACKET_BYTES = 18; //8 + 5*2 = 18 bytes
 enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
@@ -82,9 +83,10 @@ enum Commands {KEEPALIVE=0, SET_SPEED=1, TO_POSITION_WITH_SPEED=2};
 void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp, roboclaw *rc, vmu *vmu);
 void ProcessMessage(const drive_packet &packet, roboclaw *rc);
 int GetEncoders(roboclaw *rc, dead_reconning_packet *packet);
+int GetBatteryVoltage(roboclaw *rc, dead_reconning_packet *packet);
+
 int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet);
 int GetQuaternion(vmu *vmu, dead_reconning_packet *packet);
-
 
 struct roboclaw *InitMotors(const char *tty, int baudrate);
 void CloseMotors(roboclaw *rc);
@@ -159,7 +161,11 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 	struct drive_packet drive_packet;
 	uint64_t last_drive_packet_timestamp_us=TimestampUs();
 
-	uint64_t TIMEOUT_US=500*1000;
+	uint64_t TIMEOUT_US=500*1000; //hardcoded 500 ms
+
+	uint64_t last_battery_voltage_timestamp_us=TimestampUs();
+	uint64_t BATTERY_VOLTAGE_POLL_US=1000*1000; //hardcoded 1 s
+
 		
 	while(!g_finish_program)
 	{
@@ -208,9 +214,17 @@ void MainLoop(int server_udp, int client_udp, const sockaddr_in &destination_udp
 			last_drive_packet_timestamp_us=TimestampUs(); //mark timestamp not to flood with messages
 			fprintf(stderr, "ccdrive: timeout...\n");		
 		}
+
+		//check battery
+		if(TimestampUs() - last_battery_voltage_timestamp_us > BATTERY_VOLTAGE_POLL_US)
+		{
+			GetBatteryVoltage(rc, &odometry_packet);
+			last_battery_voltage_timestamp_us=TimestampUs();
+		}
 		
 		if( FD_ISSET(vmu_fd(vmu), &rfds) )
 			SendDeadReconningPacketUDP(client_udp, destination_udp, odometry_packet);
+			
 		//printf("l=%d r=%d x=%f y=%f z=%f\n", odometry_packet.position_left, odometry_packet.position_right, odometry_packet.x, odometry_packet.y, odometry_packet.z);
 			
 		if(IsStandardInputEOF()) //the parent process has closed it's pipe end
@@ -277,6 +291,22 @@ int GetEncoders(roboclaw *rc, dead_reconning_packet *packet)
 	return -1;
 }
 
+int GetBatteryVoltage(roboclaw *rc, dead_reconning_packet *packet)
+{
+	int16_t voltage;
+	int status;
+		
+	status=roboclaw_main_battery_voltage(rc, MIDDLE_MOTOR_ADDRESS, &voltage);
+	
+	if(status == ROBOCLAW_OK)
+		packet->battery_voltage=voltage;
+	else
+		fprintf(stderr, "ccdrive: unable to read battery voltage\n");
+		
+	return 0;
+}
+
+
 int GetEulerAngles(vmu *vmu, dead_reconning_packet *packet)
 {
 	static vmu_txyz euler_data[10];
@@ -337,7 +367,6 @@ int GetQuaternion(vmu *vmu, dead_reconning_packet *packet)
 	
 	return 0;
 }
-
 
 struct roboclaw *InitMotors(const char *tty, int baudrate)
 {
@@ -456,6 +485,14 @@ int encode_float(float f, char *buffer)
 	memcpy(buffer, &t32, sizeof(float));
 	return sizeof(float);
 }
+
+int encode_int16(int16_t i, char *buffer)
+{
+	uint16_t t16=htobe16(i);
+	memcpy(buffer, &t16, sizeof(int16_t));
+	return sizeof(int16_t);
+}
+
 int encode_int32(int32_t i, char *buffer)
 {
 	uint32_t t32=htobe32(i);
@@ -474,6 +511,7 @@ int EncodeDeadReconningPacket(const dead_reconning_packet &p, char *buffer)
 
 	offset+=encode_int32(p.position_left, buffer+offset);
 	offset+=encode_int32(p.position_right, buffer+offset);
+	offset+=encode_int16(p.battery_voltage, buffer+offset);
 
 	offset += encode_float(p.w, buffer+offset);
 	offset += encode_float(p.x, buffer+offset);
