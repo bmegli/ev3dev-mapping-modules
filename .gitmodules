@@ -13,3 +13,6 @@
 [submodule "lib/vmu931"]
 	path = lib/vmu931
 	url = https://github.com/bmegli/vmu931.git
+[submodule "lib/rplidar_sdk"]
+	path = lib/rplidar_sdk
+	url = https://github.com/Slamtec/rplidar_sdk.git
