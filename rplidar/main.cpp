@@ -253,6 +253,8 @@ RPlidarDriver *InitLidar(const char *tty_device, int baudrate, RplidarScanMode *
 
 void CloseLidar(RPlidarDriver *drv)
 {
+    if(!drv)
+        return;
     drv->stop();
     drv->stopMotor();
     RPlidarDriver::DisposeDriver(drv);
