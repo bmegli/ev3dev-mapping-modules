@@ -13,3 +13,6 @@
 [submodule "lib/vmu931"]
 	path = lib/vmu931
 	url = https://github.com/bmegli/vmu931.git
+[submodule "realsense-network-hardware-video-encoder"]
+	path = realsense-network-hardware-video-encoder
+	url = https://github.com/bmegli/realsense-network-hardware-video-encoder.git
