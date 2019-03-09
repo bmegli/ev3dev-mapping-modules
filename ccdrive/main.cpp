@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 	//init
 	RegisterSignals(Finish);
 
-	rc=InitMotors("/dev/ttyO1", 460800); //TO DO hardcoded params
+	rc=InitMotors("/dev/ttyXRUSB0", 460800); //TO DO hardcoded params
 		
 	InitNetworkUDP(&socket_udp, &destination_udp, NULL, port, timeout_ms);
 
