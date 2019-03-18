@@ -19,3 +19,6 @@
 [submodule "realsense-network-hardware-video-encoder"]
 	path = realsense-network-hardware-video-encoder
 	url = https://github.com/bmegli/realsense-network-hardware-video-encoder.git
+[submodule "ccmcu/cave-crawler-lib"]
+	path = ccmcu/cave-crawler-lib
+	url = https://github.com/bmegli/cave-crawler-lib.git
