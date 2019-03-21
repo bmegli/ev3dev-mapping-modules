@@ -172,9 +172,9 @@ int EncodeDeadReconningPacket(const cc_odometry_data &p, char *buffer)
 	offset+=encode_int32(p.right_encoder_counts, buffer+offset);
 
 	offset += encode_float(p.qw, buffer+offset);
-	offset += encode_float(p.qy, buffer+offset);
+	offset += encode_float(-p.qy, buffer+offset);
 	offset += encode_float(p.qz, buffer+offset);	
-	offset += encode_float(p.qx, buffer+offset);
+	offset += encode_float(-p.qx, buffer+offset);
 
 	return DEAD_RECONNING_PACKET_BYTES;	
 }
