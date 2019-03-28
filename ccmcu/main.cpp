@@ -140,7 +140,7 @@ void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_
 
 	struct cc_rplidar_data rplidar_prev;
 	struct rplidar_packet rp_data;
-	rp_data.sample_us = 938; //937.5, temp hardcoded, read from device
+	rp_data.sample_us = 63; // 1/16000(Hz) * 1000000 (us), temp hardcoded
 
 
 	struct cc_data data = {0};
