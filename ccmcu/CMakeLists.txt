@@ -19,7 +19,7 @@ add_subdirectory(cave-crawler-lib)
 #target_link_libraries(nhve hve mlsp avcodec avutil)
 
 # examples
-add_executable(ccmcu main.cpp)
+add_executable(ccmcu main.cpp net_udp.cpp misc.cpp)
 target_link_libraries(ccmcu cave-crawler)
 
 

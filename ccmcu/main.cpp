@@ -25,8 +25,8 @@
 #include "cave-crawler-lib/cave_crawler.h"
 //#include "rplidar.h"
 
-#include "../lib/shared/misc.h"
-#include "../lib/shared/net_udp.h"
+#include "misc.h"
+#include "net_udp.h"
 
 #include <string.h> //memcpy
 #include <signal.h> //sigaction, sig_atomic_t
@@ -39,12 +39,15 @@ const int DATA_SIZE=10;
 // GLOBAL VARIABLES
 volatile sig_atomic_t g_finish_program=0;
 
-void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_socket, const sockaddr_in &rplidar_dst, struct cc *c);
+void main_loop(int odo_socket, const sockaddr_in &odo_dst,
+					int rp1_socket, const sockaddr_in &rp1_dst,
+					int rp2_socket, const sockaddr_in &rp2_dst,
+					struct cc *c);
 
 int EncodeDeadReconningPacket(const cc_odometry_data &packet, char *buffer);
 void SendDeadReconningPacketUDP(int socket, const sockaddr_in &dest, const cc_odometry_data &frame);
 
-void process_arguments(int argc, char **argv, int *odometry_port, int *lidar_port);
+void process_arguments(int argc, char **argv, int *odometry_port, int *lidar1_port, int *lidar2_port);
 void usage(char **argv);
 void finish(int signal);
 
@@ -99,12 +102,11 @@ int main(int argc, char **argv)
 	struct cc *c = NULL;
 	int odometry_socket, odometry_port;
 	sockaddr_in odometry_destination;
-	int lidar_socket, lidar_port;
-	sockaddr_in lidar_destination;
-
+	int lidar1_socket, lidar2_socket, lidar1_port, lidar2_port;
+	sockaddr_in lidar1_destination, 	lidar2_destination;
 
 	//input
-	process_arguments(argc, argv, &odometry_port, &lidar_port);
+	process_arguments(argc, argv, &odometry_port, &lidar1_port, &lidar2_port);
 	const char *tty_device=argv[1];
 	const char *host=argv[2];
 
@@ -118,11 +120,16 @@ int main(int argc, char **argv)
 	}	
 
 	InitNetworkUDP(&odometry_socket, &odometry_destination, host, odometry_port, 0);
-	InitNetworkUDP(&lidar_socket, &lidar_destination, host, lidar_port, 0);
+	InitNetworkUDP(&lidar1_socket, &lidar1_destination, host, lidar1_port, 0);
+	InitNetworkUDP(&lidar2_socket, &lidar2_destination, host, lidar2_port, 0);
 
-	main_loop(odometry_socket, odometry_destination, lidar_socket, lidar_destination, c);
+	main_loop(odometry_socket, odometry_destination,
+				lidar1_socket, lidar1_destination,
+				lidar2_socket, lidar2_destination,
+				c);
 	
-	CloseNetworkUDP(lidar_socket);
+	CloseNetworkUDP(lidar2_socket);
+	CloseNetworkUDP(lidar1_socket);
 	CloseNetworkUDP(odometry_socket);
 			
 	cc_close(c);
@@ -132,13 +139,16 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_socket, const sockaddr_in &rplidar_dst, struct cc *c)
+void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,
+					int rplidar1_socket, const sockaddr_in &rplidar1_dst,
+					int rplidar2_socket, const sockaddr_in &rplidar2_dst,
+					struct cc *c)
 {
 	struct cc_odometry_data odometry[DATA_SIZE];
 	struct cc_rplidar_data rplidar[DATA_SIZE];
 	struct cc_xv11lidar_data xv11lidar[DATA_SIZE];
 
-	struct cc_rplidar_data rplidar_prev;
+	struct cc_rplidar_data rplidar_prev[2];
 	struct rplidar_packet rp_data;
 	rp_data.sample_us = 63; // 1/16000(Hz) * 1000000 (us), temp hardcoded
 
@@ -152,6 +162,9 @@ void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_
 	data.rplidar = rplidar;
 	data.xv11lidar = xv11lidar;
 	data.size = size;
+
+	int rp_sockets[2] = {rplidar1_socket, rplidar2_socket};
+	const sockaddr_in *rp_dst[2] = {&rplidar1_dst, &rplidar2_dst};
 	
 	int ret=0;
 	
@@ -162,11 +175,12 @@ void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_
 
 		for(int i=0;i<data.size.rplidar;++i)
 		{
-			if(rplidar_prev.sequence + 1 == data.rplidar[i].sequence)
+			uint8_t id=data.rplidar[i].device_id;
+			if(rplidar_prev[id].sequence + 1 == data.rplidar[i].sequence)
 			{
-				rplidar_decode(&data.rplidar[i].capsule, &rplidar_prev.capsule, rp_data.readings);
-				rp_data.timestamp_us = rplidar_prev.timestamp_us;
-				SendLidarPacket(rplidar_socket, rplidar_dst, rp_data);
+				rplidar_decode(&data.rplidar[i].capsule, &rplidar_prev[id].capsule, rp_data.readings);
+				rp_data.timestamp_us = rplidar_prev[id].timestamp_us;
+				SendLidarPacket(rp_sockets[id], *rp_dst[id], rp_data);
 				
 	//			float angle_deg=rp_data.readings[0].angle_q14 * 90.0f / (1 << 14);
 	//			int distance=rp_data.readings[0].distance_mm;				
@@ -174,7 +188,7 @@ void main_loop(int odometry_socket, const sockaddr_in &odometry_dst,int rplidar_
 	//			rp_data.timestamp_us, angle_deg, distance);
 			}
 			//temp ineeficient, use pointers
-			memcpy(&rplidar_prev, &data.rplidar[i], sizeof(cc_rplidar_data));
+			memcpy(&rplidar_prev[id], &data.rplidar[i], sizeof(cc_rplidar_data));
 
 			//printf("[rp ] t=%u seq=%d ang=%d\n",
 			//data.rplidar[i].timestamp_us, data.rplidar[i].sequence, data.rplidar[i].capsule.start_angle_sync_q6/64);
@@ -246,10 +260,10 @@ void SendDeadReconningPacketUDP(int socket, const sockaddr_in &dest, const cc_od
 	SendToUDP(socket, dest, buffer, DEAD_RECONNING_PACKET_BYTES);
 }
 
-void process_arguments(int argc, char **argv, int *odometry_port, int *lidar_port)
+void process_arguments(int argc, char **argv, int *odometry_port, int *lidar1_port, int *lidar2_port)
 {
-	//ccmcu tty_device host odometry_port, rplidar_port //xv11lidar port
-	if(argc!=5)
+	//ccmcu tty_device host odometry_port rplidar1_port rplidar2_port//xv11lidar port
+	if(argc!=6)
 	{
 		usage(argv);
 		exit(EXIT_SUCCESS);		
@@ -271,19 +285,29 @@ void process_arguments(int argc, char **argv, int *odometry_port, int *lidar_por
 	
 	if(temp <= 0 || temp > 65535)
 	{
-		fprintf(stderr, "ccmcu: the argument lidar_port has to be in range <1, 65535>\n");
+		fprintf(stderr, "ccmcu: the argument lidar1_port has to be in range <1, 65535>\n");
 		exit(EXIT_SUCCESS);
 	}
 
-	*lidar_port=temp;
+	*lidar1_port=temp;
 
+
+	temp=strtol(argv[5], NULL, 0);
+	
+	if(temp <= 0 || temp > 65535)
+	{
+		fprintf(stderr, "ccmcu: the argument lidar2_port has to be in range <1, 65535>\n");
+		exit(EXIT_SUCCESS);
+	}
+
+	*lidar2_port=temp;
 }
 void usage(char **argv)
 {
 	printf("Usage:\n");
-	printf("%s tty_device host odometry_port lidar_port\n\n", argv[0]);
+	printf("%s tty_device host odometry_port lidar1_port lidar2_port\n\n", argv[0]);
 	printf("examples:\n");
-	printf("%s /dev/ttyACM0 192.168.0.125 8013 8022\n", argv[0]);
+	printf("%s /dev/ttyACM0 192.168.0.125 8013 8022 8023\n", argv[0]);
 }
 
 void finish(int signal)
