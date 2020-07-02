@@ -11,7 +11,7 @@ For project meta-repository visit [ev3dev-mapping](https://github.com/bmegli/ev3
 
 ### Software
 
-ev3dev-mapping-modules works on [ev3dev](http://www.ev3dev.org/) operating system.
+ev3dev-mapping-modules works on [ev3dev](http://www.ev3dev.org/) operating system (jessie - yes, strech - no).
 
 ev3dev-mapping-modules works with [ev3dev-mapping-ui].
 
